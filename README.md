@@ -6,6 +6,7 @@ The Allwinner A733 is a 12nm SoC featuring 2x Cortex-A76 @ 2.0GHz + 6x Cortex-A5
 
 ## Table of Contents
 
+- [Verified Hardware Status (Radxa kernel 6.6.98-4-aw2511)](#verified-hardware-status-radxa-kernel-6698-4-aw2511) ★ **read this first**
 - [Kernels & Firmware](#kernels--firmware)
 - [OS Images & Distros](#os-images--distros)
 - [NPU (Neural Processing Unit)](#npu-neural-processing-unit)
@@ -25,6 +26,95 @@ The Allwinner A733 is a 12nm SoC featuring 2x Cortex-A76 @ 2.0GHz + 6x Cortex-A5
 - [Tools & Utilities](#tools--utilities)
 - [3D Printed Cases](#3d-printed-cases)
 - [Hardware Asset Report](#hardware-asset-report)
+
+---
+
+## Verified Hardware Status (Radxa kernel 6.6.98-4-aw2511)
+
+Hands-on test results on a **Radxa Cubie A7A** running Debian 13 (Trixie), glibc 2.41,
+kernel `6.6.98-4-aw2511`. Every row below was verified by direct experiment, not by
+reading a datasheet.
+
+| Accelerator | Device node | Init | Driver accepts work? | **Data path** | Verdict |
+|---|---|---|---|---|---|
+| **NPU** (Vivante VIP9000) | `/dev/vipcore` ✓ | ✓ VIPLite 2.0.3.2, model loads | ✗ `VIPDRV_WAIT_TASK` hangs | ✗ | ⛔ **Unusable** |
+| **VE2** (HW H.264 encoder) | `/dev/cedar_dev_ve2` + `/dev/dma_heap/system` ✓ | ✓ interrupts fire | ✓ 241 frames, valid H.264 | ✗ **emits noise** | ⛔ **Unusable** |
+| **GPU** (PowerVR BXM-4-64) | `/dev/dri/renderD128` ✓ | ✓ OpenCL 3.0 + Vulkan 1.3 | ✓ | ✓ | ✅ **Usable** (with caveats) |
+| **VPU** (V4L2 M2M decode/encode) | no `/dev/video*` | — | — | — | ⛔ Not present |
+
+### NPU: hangs on every model, every format
+
+Tested `lenet`, `ShuffleNetV2`, `resnet50` — in both `v2` and `v3` NBG formats, from the
+official `ZIFENG278/ai-sdk`. All fail identically:
+
+```
+viphal_os_call_drv[294], fail to ioctl vipcore, command[4]:VIPDRV_WAIT_TASK, status=-1
+nbglk_wait_network[2713], fail to wait network lenet_uint8_NCHW finish
+--- dmesg ---
+error wait irq hardware hang.
+wait dev0 hw0 idle, FE not idle.
+wait dev0 hw0 idle, SH not idle.
+wait dev0 hw0 idle, NN not idle.
+error, VIP not going to idle
+```
+
+Rebinding the driver (`unbind`/`bind` on `vipcore`) does not recover it.
+Kernel config has `# CONFIG_NPU_USER_IOMMU is not set`.
+Because **3 models × 2 formats all hang at the same point**, this is not a model
+compatibility issue — the NPU never completes a submitted task.
+
+### VE2: runs correctly, produces garbage
+
+`mashiqi/A733-Cedarc` (v0.1.11, SHA256 verified) runs end-to-end and exits `status=ok`,
+with correct dimensions and frame counts. But the **content is noise**:
+
+| Check | Result |
+|---|---|
+| Decode errors | `concealing 3600 DC, 3600 AC, 3600 MV errors` — all 3600 macroblocks of 1280x720 |
+| Frame 50 vs frame 100 | mean absolute pixel difference **0.47** (effectively the same noise image) |
+| Black frame (source Y=16) | libx264 → Y=16 ✓ / VE2 → **Y=128** ✗ |
+| Content frame (source mean=199) | VE2 → mean=134, min=0, max=255 (random) |
+| PSNR vs source | VE2 **10.2 dB** / libx264 **42.6 dB** |
+| Speed (for reference) | 720p 5.42x realtime, 1080p 2.82x realtime, CPU user only ~0.1s |
+
+The speed is genuinely excellent — the hardware *is* doing the work — but the frame buffer
+content never reaches the silicon.
+
+### Why both fail the same way
+
+Both accelerators initialize fine and fail at the
+**userspace → kernel → silicon data handoff**. This points at a
+DMA / IOMMU / buffer-addressing problem in the Radxa 6.6.98 BSP, not at the
+individual projects.
+
+Note that `petayyyy/a733_npu_driver` **did** succeed on NPU inference, but on different
+kernels: Orange Pi `6.6.98-sun60iw2` and the older Radxa `5.15.147-21-a733`.
+**Kernel version matters more than SoC here.**
+
+### The lesson (applies to any SBC accelerator work)
+
+> **Never conclude "the hardware works" from a device node, a successful exit code,
+> an incrementing interrupt counter, or even a valid bitstream with the right frame count.**
+> Compare decoded output against the source. A controlled A/B against a known-good
+> software path (here: libx264 on the identical frame) settles it in one shot.
+
+Useful commands:
+
+```bash
+# Does the accelerator actually see real data? Compare against a software reference.
+ffmpeg -y -s WxH -pix_fmt nv12 -f rawvideo -r FPS -i src.nv12 -i out.mp4 -lavfi psnr -f null -
+
+# Is the NPU/VE2 hardware even being engaged?
+grep -iE 've2|vipcore' /proc/interrupts
+dmesg | grep -iE 'vip|npu|cedar' | tail -20
+```
+
+### Want to try anyway?
+
+- Prefer a **different kernel** — `5.15.147-21-a733` (older Radxa BSP) or
+  `6.6.98-sun60iw2` (Orange Pi BSP) both have community-reported NPU success.
+- Test on an **SD card** image first; never experiment on your eMMC install.
+- Land a known-good reference output before you start, so you have something to A/B against.
 
 ---
 
@@ -79,11 +169,16 @@ The A733 features a Vivante VIP9000 NPU with 3 TOPS @ INT8. The device node is `
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| VIPLite 2.0.3.2 | Not installed | Allwinner's NPU SDK, ships with BSP |
-| ACUITY Toolkit | Not installed | Model conversion tool (ONNX -> NPU binary) |
+| VIPLite 2.0.3.2-AW-2024-08-30 | **Installed & loads** | From `ZIFENG278/ai-sdk` (367MB). Install `libVIPhal.so` + `libNBGlinker.so` to `/usr/lib` + `ldconfig`. Driver reports `cid=0x1000003b, device_count=1, core_count=1` |
+| `vpm_run` (VIPLite test runner) | **Builds & runs** | `ai-sdk/examples/vpm_run/`. Loads NBG models fine, but **inference hangs** — see [Verified Hardware Status](#verified-hardware-status-radxa-kernel-6698-4-aw2511) |
+| ACUITY Toolkit | Not installed (needs x86 Docker) | Model conversion ONNX -> NBG. Image `ubuntu-npu:v2.0.10.1`. Runs on a PC, not on the board |
 | TIM-VX | Available upstream | Open-source VeriSilicon runtime |
 | TFLite VX Delegate | Available upstream | TFLite -> TIM-VX bridge |
-| `/dev/vipcore` | Exists on board | Char device 199:0, mode 0666 |
+| `/dev/vipcore` | Exists on board | Char device 199:0, mode 0666. NPU devfreq 492–1008 MHz at `/sys/class/devfreq/3600000.npu/` |
+
+**Caveat**: installing the SDK is straightforward and the driver initializes correctly,
+but **no model completes inference on kernel `6.6.98-4-aw2511`**. Budget your time
+accordingly — verify inference works on your kernel before investing in model conversion.
 
 ## GPU (PowerVR BXM-4-64)
 
@@ -98,7 +193,36 @@ The A733 uses an Imagination BXM-4-64 MC1 GPU (PowerVR architecture). Driver: `p
 
 ## VPU / Video Engine
 
-The Allwinner Video Engine (VE) on A733 supports H.264/H.265 encode @ 4K30fps and decode @ 8K24fps. **Note**: The V4L2 M2M driver is NOT loaded on current board — only software encode (libx264) works. The Cedrus open-source driver supports up to Allwinner H6; A733 support is unconfirmed.
+The Allwinner Video Engine (VE) on A733 supports H.264/H.265 encode @ 4K30fps and decode @ 8K24fps.
+
+> ### ⚠️ Important: the VE2 encoder device DOES exist (but see verification below)
+>
+> A common mistake is checking only `/dev/video*` and concluding "VPU is unavailable".
+> That only proves the **V4L2 M2M** path is missing (true). The VE2 hardware encoder uses a
+> completely different interface — the **cedar character devices**:
+>
+> ```bash
+> ls -l /dev/cedar_dev /dev/cedar_dev_ve2 /dev/dma_heap/system
+> # Radxa Cubie A7A (6.6.98-4-aw2511): ALL THREE EXIST
+> ```
+>
+> They default to mode `0600` (root only). To use them as a normal user:
+>
+> ```bash
+> # /etc/udev/rules.d/99-cedar-ve2.rules
+> KERNEL=="cedar_dev",     MODE="0666"
+> KERNEL=="cedar_dev_ve2", MODE="0666"
+> SUBSYSTEM=="dma_heap",   MODE="0666"
+> ```
+>
+> **However — existing does not mean working.** See
+> [Verified Hardware Status](#verified-hardware-status-radxa-kernel-6698-4-aw2511) below:
+> on the Radxa 6.6 kernel the encoder runs but emits **noise**, not video.
+>
+> **Always verify encoder output by comparing decoded pixels against the source,
+> never by exit code or frame count.**
+
+| Repo | Stars | Description |
 
 | Repo | Stars | Description |
 |------|-------|-------------|
