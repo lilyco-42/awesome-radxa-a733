@@ -23,6 +23,7 @@ The Allwinner A733 is a 12nm SoC featuring 2x Cortex-A76 @ 2.0GHz + 6x Cortex-A5
 - [Bootloader & U-Boot](#bootloader--u-boot)
 - [Mainline Linux](#mainline-linux)
 - [Community Projects](#community-projects)
+- [Community Verification Write-ups](#community-verification-write-ups)
 - [Tools & Utilities](#tools--utilities)
 - [3D Printed Cases](#3d-printed-cases)
 - [Hardware Asset Report](#hardware-asset-report)
@@ -32,89 +33,125 @@ The Allwinner A733 is a 12nm SoC featuring 2x Cortex-A76 @ 2.0GHz + 6x Cortex-A5
 ## Verified Hardware Status (Radxa kernel 6.6.98-4-aw2511)
 
 Hands-on test results on a **Radxa Cubie A7A** running Debian 13 (Trixie), glibc 2.41,
-kernel `6.6.98-4-aw2511`. Every row below was verified by direct experiment, not by
-reading a datasheet.
+kernel `6.6.98-4-aw2511`. Every row below was verified by direct experiment.
 
-| Accelerator | Device node | Init | Driver accepts work? | **Data path** | Verdict |
-|---|---|---|---|---|---|
-| **NPU** (Vivante VIP9000) | `/dev/vipcore` ✓ | ✓ VIPLite 2.0.3.2, model loads | ✗ `VIPDRV_WAIT_TASK` hangs | ✗ | ⛔ **Unusable** |
-| **VE2** (HW H.264 encoder) | `/dev/cedar_dev_ve2` + `/dev/dma_heap/system` ✓ | ✓ interrupts fire | ✓ 241 frames, valid H.264 | ✗ **emits noise** | ⛔ **Unusable** |
-| **GPU** (PowerVR BXM-4-64) | `/dev/dri/renderD128` ✓ | ✓ OpenCL 3.0 + Vulkan 1.3 | ✓ | ✓ | ✅ **Usable** (with caveats) |
-| **VPU** (V4L2 M2M decode/encode) | no `/dev/video*` | — | — | — | ⛔ Not present |
+> **⚠️ Corrected 2026-09-12.** An earlier revision of this table marked NPU and VE2 as
+> unusable. **Both conclusions were wrong — they came from testing the wrong driver
+> paths.** Re-testing with the correct drivers shows both accelerators work. The
+> original analysis is preserved in
+> [Appendix A: Retracted findings](#appendix-a-retracted-findings), because the
+> *methodology error* is itself the most useful thing on this page.
 
-### NPU: hangs on every model, every format
+| Accelerator | Interface | Init | **Data path** | Verdict |
+|---|---|---|---|---|
+| **NPU** (Vivante VIP9000) | `/dev/galcore` (via `galcore.ko`) | ✓ Galcore 6.4.15.3, 1008 MHz | ✓ **Correct output** | ✅ **Usable** |
+| **VE2** (HW H.264 encoder) | `/dev/cedar_dev_ve2` + `/dev/dma_heap/system` | ✓ interrupts fire | ✓ **Official suite 8/8 + rotation ALL PASS** | ✅ **Usable** |
+| **GPU** (PowerVR BXM-4-64) | `/dev/dri/renderD128` ✓ | ✓ OpenCL 3.0 + Vulkan 1.3 | ✓ | ✅ **Usable** (with caveats) |
+| **VPU** (V4L2 M2M decode/encode) | no `/dev/video*` | — | — | ⛔ Not present (use the cedar interface instead) |
 
-Tested `lenet`, `ShuffleNetV2`, `resnet50` — in both `v2` and `v3` NBG formats, from the
-official `ZIFENG278/ai-sdk`. All fail identically:
+### NPU: works via `galcore`, not `vipcore`
 
+The A733 NPU can be driven by **two different kernel drivers**:
+
+| Driver | Userspace | Result on `6.6.98-4-aw2511` |
+|---|---|---|
+| `vipcore` (vendor, in BSP) | VIPLite 2.0.3.2 (`/dev/vipcore`) | ⛔ **Fails** — `VIPDRV_WAIT_TASK` hangs, `error wait irq hardware hang` |
+| `galcore` (open, out-of-tree) | TIM-VX 1.2.22 (`/dev/galcore`) | ✅ **Works** — builds against 6.6 after a 9-hunk port |
+
+**The NPU silicon is fine; the vendor `vipcore` driver is what fails.** Switching to the
+open `galcore` driver on the *same kernel* makes inference work end-to-end
+(`llama.cpp` with the A733/TIM-VX backend, Qwen2.5-0.5B Q8_0).
+
+Porting `galcore` from 5.15 to 6.6 needed 9 mechanical changes:
+
+| # | Issue | Fix |
+|---|---|---|
+| 1–2 | `vm_flags` became read-only in 6.3 | `vm_flags_set(vma, ...)` |
+| 3 | `pin_user_pages` dropped the `vmas` arg in 6.5 | 4-argument call |
+| 4 | `dma_buf.lock` removed in 6.6 | version guard |
+| 5 | `class_create` takes 1 arg since 6.4 | version guard |
+| 6 | `virt_addr_valid` needs a pointer | cast to `(void *)` |
+| 7 | `__pte_offset_map_lock` not exported | open-code with `pte_offset_kernel` + `pte_lockptr` |
+| 8 | BSP kernel lacks `__GFP_ATOMIC` | `#ifndef` fallback |
+| 9 | `-Werror` turns warnings into errors | remove the flag |
+
+**One-time gotcha:** the *first* submission after module load triggers
+`GPU[0] core0 hang, automatic recovery`. This is a **one-off event** — Galcore
+self-recovers and every later inference is clean. Do not conclude "NPU is broken" from
+that single dmesg line (we did, and it cost a day).
+
+```bash
+# Verify the NPU is actually computing — this counter only moves on real commands
+grep galcore /proc/interrupts
+# 457:  46 ... galcore:0
 ```
-viphal_os_call_drv[294], fail to ioctl vipcore, command[4]:VIPDRV_WAIT_TASK, status=-1
-nbglk_wait_network[2713], fail to wait network lenet_uint8_NCHW finish
---- dmesg ---
-error wait irq hardware hang.
-wait dev0 hw0 idle, FE not idle.
-wait dev0 hw0 idle, SH not idle.
-wait dev0 hw0 idle, NN not idle.
-error, VIP not going to idle
-```
 
-Rebinding the driver (`unbind`/`bind` on `vipcore`) does not recover it.
-Kernel config has `# CONFIG_NPU_USER_IOMMU is not set`.
-Because **3 models × 2 formats all hang at the same point**, this is not a model
-compatibility issue — the NPU never completes a submitted task.
+**Honest performance note:** throughput currently sits on par with the CPU
+(~3.8 t/s generation vs 4.1 t/s across all 8 cores), because the TIM-VX backend is a
+hybrid schedule — only some ops land on the NPU. The data path is proven; real speedup
+needs broader TIM-VX op coverage (userspace work, not a kernel problem).
 
-### VE2: runs correctly, produces garbage
+### VE2: works completely, verified against source
 
-`mashiqi/A733-Cedarc` (v0.1.11, SHA256 verified) runs end-to-end and exits `status=ok`,
-with correct dimensions and frame counts. But the **content is noise**:
+`mashiqi/A733-Cedarc` v0.1.11 passes its **entire official validation suite**:
 
-| Check | Result |
+| Suite | Result |
 |---|---|
-| Decode errors | `concealing 3600 DC, 3600 AC, 3600 MV errors` — all 3600 macroblocks of 1280x720 |
-| Frame 50 vs frame 100 | mean absolute pixel difference **0.47** (effectively the same noise image) |
-| Black frame (source Y=16) | libx264 → Y=16 ✓ / VE2 → **Y=128** ✗ |
-| Content frame (source mean=199) | VE2 → mean=134, min=0, max=255 (random) |
-| PSNR vs source | VE2 **10.2 dB** / libx264 **42.6 dB** |
-| Speed (for reference) | 720p 5.42x realtime, 1080p 2.82x realtime, CPU user only ~0.1s |
+| FPS matrix (640×360 @1/7/15/29/30/60, 1920×1080 @30/60) | ✅ **8/8 PASS** |
+| Rotation matrix (0°/90°/180°/270°) | ✅ **ALL PASSED** |
 
-The speed is genuinely excellent — the hardware *is* doing the work — but the frame buffer
-content never reaches the silicon.
+Each PASS requires `IRQ delta == frame count`, zero sync timeouts, exact output
+resolution and frame count, and duration within ±0.001 s — i.e. the encoder provably
+does the work and the output is provably correct.
 
-### Why both fail the same way
+| Metric | Value |
+|---|---|
+| 1080p throughput | ~68 fps (2.8× realtime) — 241 frames in 3.5 s |
+| 4K throughput | ~22 fps (3840×2160) |
+| CPU during encode | **~27% of one core** (libx264 needs 700%+) |
 
-Both accelerators initialize fine and fail at the
-**userspace → kernel → silicon data handoff**. This points at a
-DMA / IOMMU / buffer-addressing problem in the Radxa 6.6.98 BSP, not at the
-individual projects.
+**Two upstream bugs we fixed** (patch in `lilyco-42/radxa_utlra`):
 
-Note that `petayyyy/a733_npu_driver` **did** succeed on NPU inference, but on different
-kernels: Orange Pi `6.6.98-sun60iw2` and the older Radxa `5.15.147-21-a733`.
-**Kernel version matters more than SoC here.**
+1. **Output MP4 had the wrong duration** (a 10 s clip reported 2.04 s). Cause: VE2's SPS
+   VUI timing is slightly off, and `h264_metadata` bitstream filters are not applied
+   under `-c:v copy`. Fix: two-pass — encode to a raw stream, then remux with
+   `-r $fps -fps_mode cfr -video_track_timescale 90000`.
+2. **Non-zero exit code** from an unclean temp directory, which made the official
+   validation script report a false FAIL.
 
 ### The lesson (applies to any SBC accelerator work)
 
-> **Never conclude "the hardware works" from a device node, a successful exit code,
-> an incrementing interrupt counter, or even a valid bitstream with the right frame count.**
-> Compare decoded output against the source. A controlled A/B against a known-good
-> software path (here: libx264 on the identical frame) settles it in one shot.
+> **Never declare hardware dead because one driver fails.** The A733 NPU fails under
+> `vipcore` and works under `galcore` — same silicon, same kernel. When a vendor driver
+> fails, check whether an open alternative exists before giving up.
+>
+> Equally: **never declare hardware working from a device node, an exit code, or an
+> incrementing interrupt counter alone.** Compare decoded output against a known-good
+> software reference (`-lavfi psnr`) — but first make sure your *reference path* is
+> correct, because a broken remux step can make working hardware look broken.
 
 Useful commands:
 
 ```bash
-# Does the accelerator actually see real data? Compare against a software reference.
-ffmpeg -y -s WxH -pix_fmt nv12 -f rawvideo -r FPS -i src.nv12 -i out.mp4 -lavfi psnr -f null -
+# Compare accelerator output against a software reference
+ffmpeg -i out.mp4 -i source.mp4 -lavfi psnr -f null -
 
-# Is the NPU/VE2 hardware even being engaged?
-grep -iE 've2|vipcore' /proc/interrupts
-dmesg | grep -iE 'vip|npu|cedar' | tail -20
+# Is the accelerator engaged?
+grep -iE 'galcore|cedar|vipcore' /proc/interrupts
+dmesg | grep -iE 'galcore|vip|npu|cedar' | tail -20
 ```
 
-### Want to try anyway?
+### One-command setup
 
-- Prefer a **different kernel** — `5.15.147-21-a733` (older Radxa BSP) or
-  `6.6.98-sun60iw2` (Orange Pi BSP) both have community-reported NPU success.
-- Test on an **SD card** image first; never experiment on your eMMC install.
-- Land a known-good reference output before you start, so you have something to A/B against.
+Everything above (NPU port + VE2 runtime + governor tuning) ships as an idempotent
+installer:
+
+```bash
+git clone https://github.com/lilyco-42/radxa_utlra.git
+cd radxa_utlra
+sudo ./scripts/deploy-a7a-full-stack.sh --check   # dry run
+sudo ./scripts/deploy-a7a-full-stack.sh           # install
+```
 
 ---
 
@@ -155,6 +192,8 @@ The A733 features a Vivante VIP9000 NPU with 3 TOPS @ INT8. The device node is `
 | Repo | Stars | Description |
 |------|-------|-------------|
 | [petayyyy/a733_npu_driver](https://github.com/petayyyy/a733_npu_driver) | 5 | NPU driver + toolchain for A733. SmolLM2-135M (21 tok/s), MobileCLIP-S0 (22.6ms/frame). Qwen2.5-0.5B fails on all quantization paths |
+| [reef1994/a733-llama-npu-stack](https://github.com/reef1994/a733-llama-npu-stack) | 0 | **`galcore` NPU driver + TIM-VX + llama.cpp stack for A733.** This is the driver path that works on Radxa `6.6.98-4-aw2511`; needs a 9-hunk kernel port (see `lilyco-42/radxa_utlra`) |
+| [lilyco-42/radxa_utlra](https://github.com/lilyco-42/radxa_utlra) | 0 | **One-command A7A full-stack deploy**: `galcore` 6.6 port patch + VE2 runtime + governor tuning. Idempotent installer with `--check` dry-run |
 | [ZIFENG278/ai-sdk](https://github.com/ZIFENG278/ai-sdk) | 25 | Radxa Cubie series NPU AI-SDK — Allwinner's official NPU SDK for the Cubie board family |
 | [VeriSilicon/TIM-VX](https://github.com/VeriSilicon/TIM-VX) | 261 | Official VeriSilicon TIM-VX NPU runtime — the upstream framework for Vivante NPU programming |
 | [VeriSilicon/tflite-vx-delegate](https://github.com/VeriSilicon/tflite-vx-delegate) | 48 | TensorFlow Lite external delegate based on TIM-VX — run TFLite models on Vivante NPU |
@@ -227,7 +266,8 @@ The Allwinner Video Engine (VE) on A733 supports H.264/H.265 encode @ 4K30fps an
 | Repo | Stars | Description |
 |------|-------|-------------|
 | [skamagedon/a733-zero-copy](https://github.com/skamagedon/a733-zero-copy) | 3 | Zero-copy hardware video playback on A733 via libvdecoder + DRM PRIME. Bypasses broken vendor OMX layer. 174% CPU -> ~8%. Includes GStreamer element |
-| [mashiqi/A733-Cedarc](https://github.com/mashiqi/A733-Cedarc) | 2 | Cedarc/VE2 H.264 hardware encoder for A733. Reads NV12 from stdin, outputs Annex-B H.264. No GStreamer required |
+| [mashiqi/A733-Cedarc](https://github.com/mashiqi/A733-Cedarc) | 2 | Cedarc/VE2 H.264 hardware encoder for A733. Reads NV12 from stdin, outputs Annex-B H.264. No GStreamer required. **Verified working** on `6.6.98-4-aw2511` |
+| [lilyco-42/radxa_utlra](https://github.com/lilyco-42/radxa_utlra) | 0 | **One-command VE2 setup** + fixes for two upstream `aw-h264-to-mp4` bugs (wrong MP4 duration, spurious exit code). Also bundles the `galcore` NPU port |
 | [linux-sunxi/sunxi-cedrus](https://github.com/linux-sunxi/sunxi-cedrus) | 3 | Cedrus V4L2 stateful video decoder driver for Allwinner SoCs (out-of-tree, up to H6) |
 | [linux-sunxi/libvdpau-sunxi](https://github.com/linux-sunxi/libvdpau-sunxi) | 169 | Experimental VDPAU for Allwinner sunxi SoCs (obsolete, see Sunxi-Cedrus) |
 | [FlorentRevest/sunxi-cedrus-drv-video](https://github.com/FlorentRevest/sunxi-cedrus-drv-video) | 10 | Libva backend for sunxi-cedrus V4L2 M2M driver (upstream moved to free-electrons/cedrus) |
@@ -379,6 +419,66 @@ The complete hardware asset report is in [`radxa_a7a_hardware_assets.md`](./radx
 - Hardware security (AES/DES/SM4/RSA/ECC/SM2 + TRNG + TrustZone)
 - SBC comparison (A7A vs RPi 5 vs Orange Pi 5 vs Rock 5B)
 - Unexploited capabilities and known limitations
+
+---
+
+## Appendix A: Retracted findings
+
+Kept deliberately. These results were **wrong**, and the reason they were wrong is more
+useful than the results themselves.
+
+### What was claimed
+
+On kernel `6.6.98-4-aw2511`, testing `/dev/vipcore` (VIPLite) for NPU and
+`mashiqi/A733-Cedarc` for VE2:
+
+| Claim | Evidence given at the time |
+|---|---|
+| NPU ⛔ unusable | `lenet`, `ShuffleNetV2`, `resnet50` (v2 + v3 NBG) all hung at `VIPDRV_WAIT_TASK`; dmesg `error wait irq hardware hang` |
+| VE2 ⛔ unusable | Encoder exited `status=ok` with correct frame count, but decoded content was noise: PSNR 10.2 dB vs libx264's 42.6 dB |
+
+The reasoning was: both accelerators init fine and fail at the
+userspace → kernel → silicon handoff, so it must be a DMA/IOMMU bug in the BSP.
+That conclusion was confidently wrong on both counts.
+
+### What was actually true
+
+**NPU** — the hardware was never broken. The test used the vendor `vipcore` driver; the
+open `galcore` driver on the *same kernel* works. One driver failing is not the silicon
+failing.
+
+**VE2** — the hardware was never broken either. The "noise" came from **our own measurement
+setup**: the MP4 remux step produced a file with corrupted timestamps, and comparing that
+against the source produced a garbage PSNR. The encoder output itself was fine all along.
+With the remux fixed, the official suite passes 8/8.
+
+### The three mistakes worth remembering
+
+1. **Concluding "hardware is broken" from one driver's failure.** Always ask whether an
+   alternative driver path exists. `grep -r <device> /sys/bus/platform/drivers/` — on this
+   board both `vipcore` *and* `galcore` can bind the NPU, and only one of them works.
+
+2. **Trusting a measurement pipeline you haven't validated.** The PSNR that "proved" VE2
+   was broken was itself computed from a malformed file. When a measurement says
+   "everything is garbage", suspect the measurement before the subject.
+
+3. **A single alarming dmesg line is not a verdict.** `GPU[0] core0 hang, automatic
+   recovery` appears exactly once, on first submission after module load, and
+   self-recovers. Grepping dmesg for `hang` and stopping there is how a working NPU got
+   written off.
+
+### Corrected quick reference
+
+```bash
+# NPU: use galcore, not vipcore
+grep -qw galcore /proc/modules && echo "galcore loaded"
+cat /sys/bus/platform/drivers/galcore/3600000.npu/of_node/compatible 2>/dev/null
+grep galcore /proc/interrupts        # counter should increase during inference
+
+# VE2: verify against the SOURCE, with a remux you trust
+h264-ve2 source.mp4 out.mp4
+ffmpeg -i out.mp4 -i source.mp4 -lavfi psnr -f null -   # expect ~42 dB, not ~10 dB
+```
 
 ---
 
