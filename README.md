@@ -35,34 +35,52 @@ The Allwinner A733 is a 12nm SoC featuring 2x Cortex-A76 @ 2.0GHz + 6x Cortex-A5
 Hands-on test results on a **Radxa Cubie A7A** running Debian 13 (Trixie), glibc 2.41,
 kernel `6.6.98-4-aw2511`. Every row below was verified by direct experiment.
 
-> **⚠️ Corrected 2026-09-12.** An earlier revision of this table marked NPU and VE2 as
-> unusable. **Both conclusions were wrong — they came from testing the wrong driver
-> paths.** Re-testing with the correct drivers shows both accelerators work. The
-> original analysis is preserved in
-> [Appendix A: Retracted findings](#appendix-a-retracted-findings), because the
-> *methodology error* is itself the most useful thing on this page.
+> **⚠️ Corrected twice on 2026-09-12 — read the current version.**
+> 1st correction: an earlier revision marked NPU and VE2 as unusable; that came from
+> testing the wrong driver paths (original analysis preserved in
+> [Appendix A: Retracted findings](#appendix-a-retracted-findings)).
+> 2nd correction (final): the "NPU works via `galcore`" claim from the 1st correction was
+> itself **retracted** — it relied on an invalid interrupt-counter criterion. Final NPU
+> verdict below. VE2 and GPU remain ✅ (their evidence survives scrutiny).
 
 | Accelerator | Interface | Init | **Data path** | Verdict |
 |---|---|---|---|---|
-| **NPU** (Vivante VIP9000) | `/dev/galcore` (via `galcore.ko`) | ✓ Galcore 6.4.15.3, 1008 MHz | ✓ **Correct output** | ✅ **Usable** |
+| **NPU** (Vivante VIP9000) | `/dev/galcore` + `/dev/vipcore` | ✓ both drivers init, 1008 MHz | ⛔ **hangs at HW execution on BOTH routes** | ⛔ **Not usable on 6.6**; works on the 5.15 vendor kernel, but even then negative ROI for LLM (5.02 vs 18.1 tok/s) |
 | **VE2** (HW H.264 encoder) | `/dev/cedar_dev_ve2` + `/dev/dma_heap/system` | ✓ interrupts fire | ✓ **Official suite 8/8 + rotation ALL PASS** | ✅ **Usable** |
 | **GPU** (PowerVR BXM-4-64) | `/dev/dri/renderD128` ✓ | ✓ `pvrsrvkm`, Vulkan 1.3.277 + OpenCL 3.0, 600 MHz | ✓ **OpenCL compute verified via IRQ delta** | ✅ **Usable** |
 | **VPU** (V4L2 M2M decode/encode) | no `/dev/video*` | — | — | ⛔ Not present (use the cedar interface instead) |
 
-### NPU: works via `galcore`, not `vipcore`
+### NPU: final verdict — hangs on 6.6 via BOTH routes
 
 The A733 NPU can be driven by **two different kernel drivers**:
 
 | Driver | Userspace | Result on `6.6.98-4-aw2511` |
 |---|---|---|
-| `vipcore` (vendor, in BSP) | VIPLite 2.0.3.2 (`/dev/vipcore`) | ⛔ **Fails** — `VIPDRV_WAIT_TASK` hangs, `error wait irq hardware hang` |
-| `galcore` (open, out-of-tree) | TIM-VX 1.2.22 (`/dev/galcore`) | ✅ **Works** — builds against 6.6 after a 9-hunk port |
+| `vipcore` (vendor, in BSP) | VIPLite 2.0.3.2 (`/dev/vipcore`) | ⛔ init OK, then **hangs**: `VIPDRV_WAIT_TASK status=-1`, `npu: VIP not going to idle` |
+| `galcore` (open, out-of-tree) | TIM-VX 1.2.22 (`/dev/galcore`) | ⛔ builds after a 9-hunk port, but **hangs on real compute** (see `-ngl` matrix below) |
 
-**The NPU silicon is fine; the vendor `vipcore` driver is what fails.** Switching to the
-open `galcore` driver on the *same kernel* makes inference work end-to-end
-(`llama.cpp` with the A733/TIM-VX backend, Qwen2.5-0.5B Q8_0).
+**`galcore` failure matrix** (controlled experiment — the `-ngl` variable finally fully covered):
 
-Porting `galcore` from 5.15 to 6.6 needed 9 mechanical changes:
+| llama.cpp `-ngl` | Behavior |
+|---|---|
+| `0` | A733 backend never selected by the scheduler — pure CPU speed |
+| `1` | Runs at CPU speed (17.7 t/s) — backend participates but completes no work |
+| `>= 2` | `E A733: TIM-VX run failed` → `llama_decode ret = -3` → kernel `[galcore]: core0 hang` |
+
+**Why the earlier "works via galcore" claim was retracted.** It was based on
+`grep galcore /proc/interrupts` incrementing. That criterion is **invalid for `galcore`**:
+the counter also moves during pure-CPU runs — the IRQs come from the driver's `_SetPower`
+power-management pairing, not from compute. (For the GPU, `pvrsrvkm`, the same criterion
+happens to be valid, which is why the GPU verdict stands.) A profile-instrumented backend
+(`A733_PROFILE_EVERY=1`, in `radxa_utlra`) confirms `ggml_backend_a733_graph_compute()`
+never completes real work on this kernel.
+
+**The hang is environment-inherent, not caused by local changes.** Two 3 MB hang captures
+dated Sep 4 sit in `~/npu-bin/etc/npu/vpm_run/` on this board — same ShuffleNetV2 NBG,
+from before any of this work.
+
+Porting `galcore` from 5.15 to 6.6 still took 9 mechanical changes (patch in
+`lilyco-42/radxa_utlra`) — kept here because it is useful to whoever fixes the kernel side:
 
 | # | Issue | Fix |
 |---|---|---|
@@ -75,21 +93,22 @@ Porting `galcore` from 5.15 to 6.6 needed 9 mechanical changes:
 | 8 | BSP kernel lacks `__GFP_ATOMIC` | `#ifndef` fallback |
 | 9 | `-Werror` turns warnings into errors | remove the flag |
 
-**One-time gotcha:** the *first* submission after module load triggers
-`GPU[0] core0 hang, automatic recovery`. This is a **one-off event** — Galcore
-self-recovers and every later inference is clean. Do not conclude "NPU is broken" from
-that single dmesg line (we did, and it cost a day).
+**Even when it works, LLM decode is negative ROI.** Measured on this very board with the
+vendor-verified **5.15.147-21-a733** kernel (reef1994 `board_verification.json`,
+2026-08-19): 24 INT16 NBG blocks, cosine 0.9999999999 — **5.02 tok/s**, vs **18.1 tok/s**
+for the same model on 8 CPU cores. Per-layer CPU↔NPU sync round-trips dominate small
+models. Independent confirmation: [msazanov/vivante-vip9000-llm-lab](https://github.com/msazanov/vivante-vip9000-llm-lab)
+(actively maintained) reached only **0.97 tok/s** full-model NPU decode after weeks of tuning.
 
-```bash
-# Verify the NPU is actually computing — this counter only moves on real commands
-grep galcore /proc/interrupts
-# 457:  46 ... galcore:0
-```
+**Where the NPU IS worth it**: CNN/ViT encoder workloads — static shapes, one NBG call,
+no KV-cache: Frigate detection, YOLO tracking, MediaPipe face landmarks, EmbeddingGemma
+(repos below). petayyyy got SmolVLM's SigLIP running *accurately* on NPU with the LLM on CPU.
 
-**Honest performance note:** throughput currently sits on par with the CPU
-(~3.8 t/s generation vs 4.1 t/s across all 8 cores), because the TIM-VX backend is a
-hybrid schedule — only some ops land on the NPU. The data path is proven; real speedup
-needs broader TIM-VX op coverage (userspace work, not a kernel problem).
+**If you want to fix the 6.6 hang**: the shortest path is diffing petayyyy's
+`6.6.98-sun60iw2` (Orange Pi BSP) NPU device-tree / clock / IRQ config against Radxa's
+`aw2511` — they demonstrate `/dev/vipcore` working on a 6.6 kernel. Root-cause suspects
+on the Radxa BSP: NPU clock (`pll-npu` 1.008 GHz), power domain (`pck-600`), or
+completion-IRQ routing.
 
 ### VE2: works completely, verified against source
 
@@ -126,9 +145,13 @@ does the work and the output is provably correct.
 > fails, check whether an open alternative exists before giving up.
 >
 > Equally: **never declare hardware working from a device node, an exit code, or an
-> incrementing interrupt counter alone.** Compare decoded output against a known-good
-> software reference (`-lavfi psnr`) — but first make sure your *reference path* is
-> correct, because a broken remux step can make working hardware look broken.
+> incrementing interrupt counter alone.** The galcore IRQ counter increments on
+> power-management transitions (`_SetPower`), not only on compute — an "IRQ delta proof"
+> can be pure theater (it fooled us twice in one day; it *coincidentally* holds for the
+> GPU driver, which made it look trustworthy). Prefer instrumentation that only fires on
+> real work — backend profile counters, output correctness vs a software reference — and
+> make sure the *reference path* itself is correct, because a broken remux step can make
+> working hardware look broken.
 
 Useful commands:
 
@@ -191,16 +214,21 @@ The A733 features a Vivante VIP9000 NPU with 3 TOPS @ INT8. The device node is `
 
 | Repo | Stars | Description |
 |------|-------|-------------|
-| [petayyyy/a733_npu_driver](https://github.com/petayyyy/a733_npu_driver) | 5 | NPU driver + toolchain for A733. SmolLM2-135M (21 tok/s), MobileCLIP-S0 (22.6ms/frame). Qwen2.5-0.5B fails on all quantization paths |
-| [reef1994/a733-llama-npu-stack](https://github.com/reef1994/a733-llama-npu-stack) | 0 | **`galcore` NPU driver + TIM-VX + llama.cpp stack for A733.** This is the driver path that works on Radxa `6.6.98-4-aw2511`; needs a 9-hunk kernel port (see `lilyco-42/radxa_utlra`) |
-| [lilyco-42/radxa_utlra](https://github.com/lilyco-42/radxa_utlra) | 0 | **One-command A7A full-stack deploy**: `galcore` 6.6 port patch + VE2 runtime + governor tuning. Idempotent installer with `--check` dry-run |
-| [ZIFENG278/ai-sdk](https://github.com/ZIFENG278/ai-sdk) | 25 | Radxa Cubie series NPU AI-SDK — Allwinner's official NPU SDK for the Cubie board family |
+| [petayyyy/a733_npu_driver](https://github.com/petayyyy/a733_npu_driver) | 6 | NPU toolchain (ONNX→ACUITY→NBG→VIPLite). **Documents both 5.15.147 and 6.6.98-sun60iw2 kernels** — `/dev/vipcore` works on the Orange Pi 6.6 BSP. SmolVLM SigLIP on NPU + CPU LLM works; Qwen2.5-0.5B NBG export fails accuracy on all paths |
+| [reef1994/a733-llama-npu-stack](https://github.com/reef1994/a733-llama-npu-stack) | 0 | **`galcore` NPU driver + TIM-VX + llama.cpp stack for A733.** Vendor-verified on 5.15.147-21-a733: 24-layer NBG runs at 5.02 tok/s, cosine 0.9999999999 (slower than 8-core CPU at 18.1). Needs a 9-hunk port for Radxa 6.6 (see `lilyco-42/radxa_utlra`), where it then hits the HW hang |
+| [lilyco-42/radxa_utlra](https://github.com/lilyco-42/radxa_utlra) | 0 | **One-command A7A full-stack deploy**: `galcore` 6.6 port patch + VE2 runtime + GPU 14-point check + governor tuning. Idempotent installer with `--npu/--ve2/--gpu/--perf/--check` |
+| [ZIFENG278/ai-sdk](https://github.com/ZIFENG278/ai-sdk) | 25 | Radxa Cubie series NPU AI-SDK — Allwinner's official NPU SDK for the Cubie board family. Version pairing: kernel VIPLite `2.0.3.4-AW-2025-10-27` + userspace `2.0.3.2-AW-2024-08-30` (A733 = v2.0, T527 = v1.13; bundled sample model is T527-only, use `*_a733.nb`) |
+| [nsbb/ai-sdk](https://github.com/nsbb/ai-sdk) | 0 | T527 ACUITY toolkit mirror incl. `docs/acuity_612_vs_621.md` — check here when NBG exports produce garbage (toolchain version differences) |
 | [VeriSilicon/TIM-VX](https://github.com/VeriSilicon/TIM-VX) | 261 | Official VeriSilicon TIM-VX NPU runtime — the upstream framework for Vivante NPU programming |
 | [VeriSilicon/tflite-vx-delegate](https://github.com/VeriSilicon/tflite-vx-delegate) | 48 | TensorFlow Lite external delegate based on TIM-VX — run TFLite models on Vivante NPU |
 | [VeriSilicon/vsi-pjrt-plugin](https://github.com/VeriSilicon/vsi-pjrt-plugin) | 7 | PJRT plugin for TensorFlow/JAX NPU acceleration via VeriSilicon IP |
 | [MaverickLong/MLIR-TIM-VX](https://github.com/MaverickLong/MLIR-TIM-VX) | 3 | MLIR lowering path to TIM-VX backend for VeriSilicon NPUs |
+| [alexcaoys/allwinner-bsp](https://github.com/alexcaoys/allwinner-bsp) | 0 | BSP kernel tree containing the vendor `vipcore` NPU driver source (header paths broken as shipped — Armbian forum thread 56130 p.4 has a patched tree) |
+| [waz664/vip9000-embeddinggemma](https://github.com/waz664/vip9000-embeddinggemma) | 0 | EmbeddingGemma on VIP9000 (Cubie A7S) — encoder-class workload that actually suits the NPU |
+| [RiteshKumarRay/Radxa-VIP9000-NPU-Tracking](https://github.com/RiteshKumarRay/Radxa-VIP9000-NPU-Tracking) | 0 | YOLOv5s person tracking on VIP9000 |
+| [arnaudlvq/MediaPipe-FaceLandmarker-NPU-Version-A733-VeriSilicon-VIP9000](https://github.com/arnaudlvq/MediaPipe-FaceLandmarker-NPU-Version-A733-VeriSilicon-VIP9000) | 0 | MediaPipe face landmarks on the A733 NPU |
 | [unnamedwild-ux/frigate_npu_vivante](https://github.com/unnamedwild-ux/frigate_npu_vivante) | 4 | Frigate (NVR/surveillance) running on Vivante VIP9000 NPU |
-| [msazanov/vivante-vip9000-llm-lab](https://github.com/msazanov/vivante-vip9000-llm-lab) | 0 | LLM experiments on Vivante VIP9000 NPU |
+| [msazanov/vivante-vip9000-llm-lab](https://github.com/msazanov/vivante-vip9000-llm-lab) | 0 | Evidence-driven LLM-on-NPU lab (updated 2026-09): best full-model NPU decode 0.97 tok/s; documents LPDDR bandwidth (controller readback 510 MHz) |
 | [Haidegger22/orangepi-zero3w-gpu-npu-vpu-debian11](https://github.com/Haidegger22/orangepi-zero3w-gpu-npu-vpu-debian11) | 1 | Orange Pi Zero 3W (A733) GPU/NPU/VPU Debian 11 setup guide |
 | [HBConline/orangepi4pro-skill](https://github.com/HBConline/orangepi4pro-skill) | 3 | Agent skill for Orange Pi 4 Pro (A733): embedded Linux, edge AI (3 TOPS NPU), GPIO/wiringOP, Android 13 AOSP. Encodes 263-page official manual |
 
@@ -216,8 +244,13 @@ The A733 features a Vivante VIP9000 NPU with 3 TOPS @ INT8. The device node is `
 | `/dev/vipcore` | Exists on board | Char device 199:0, mode 0666. NPU devfreq 492–1008 MHz at `/sys/class/devfreq/3600000.npu/` |
 
 **Caveat**: installing the SDK is straightforward and the driver initializes correctly,
-but **no model completes inference on kernel `6.6.98-4-aw2511`**. Budget your time
-accordingly — verify inference works on your kernel before investing in model conversion.
+but **no model completes inference on kernel `6.6.98-4-aw2511`** — final verdict, both
+driver routes hang at hardware execution (see
+[Verified Hardware Status](#verified-hardware-status-radxa-kernel-6698-4-aw2511)).
+Official pairing per Radxa: kernel VIPLite `2.0.3.4-AW-2025-10-27` + userspace
+`2.0.3.2-AW-2024-08-30` is a legal combination (ABI 2.0.3 check only); use the r5 image
+for NPU work, not the T5 test image. Budget your time accordingly — verify inference
+works on your kernel before investing in model conversion.
 
 ## GPU (PowerVR BXM-4-64)
 
