@@ -46,7 +46,7 @@ kernel `6.6.98-4-aw2511`. Every row below was verified by direct experiment.
 |---|---|---|---|---|
 | **NPU** (Vivante VIP9000) | `/dev/galcore` (via `galcore.ko`) | ✓ Galcore 6.4.15.3, 1008 MHz | ✓ **Correct output** | ✅ **Usable** |
 | **VE2** (HW H.264 encoder) | `/dev/cedar_dev_ve2` + `/dev/dma_heap/system` | ✓ interrupts fire | ✓ **Official suite 8/8 + rotation ALL PASS** | ✅ **Usable** |
-| **GPU** (PowerVR BXM-4-64) | `/dev/dri/renderD128` ✓ | ✓ OpenCL 3.0 + Vulkan 1.3 | ✓ | ✅ **Usable** (with caveats) |
+| **GPU** (PowerVR BXM-4-64) | `/dev/dri/renderD128` ✓ | ✓ `pvrsrvkm`, Vulkan 1.3.277 + OpenCL 3.0, 600 MHz | ✓ **OpenCL compute verified via IRQ delta** | ✅ **Usable** |
 | **VPU** (V4L2 M2M decode/encode) | no `/dev/video*` | — | — | ⛔ Not present (use the cedar interface instead) |
 
 ### NPU: works via `galcore`, not `vipcore`
@@ -229,6 +229,92 @@ The A733 uses an Imagination BXM-4-64 MC1 GPU (PowerVR architecture). Driver: `p
 | [TblP/orangepi-gpu-exp](https://github.com/TblP/orangepi-gpu-exp) | 1 | GPU GEMM / Whisper acceleration research on PowerVR BXM |
 | [Haidegger22/orangepi-zero3w-gpu-pcie](https://github.com/Haidegger22/orangepi-zero3w-gpu-pcie) | 3 | GPU OpenGL ES 3.2 + Vulkan 1.3 + PCIe 3.0 on Orange Pi Zero 3W (A733) under Debian 13 |
 | [Rabs9/radxa-a7a-toolkit](https://github.com/Rabs9/radxa-a7a-toolkit) | 0 | Fixes, tools and game launchers for Cubie A7A (A733 / PowerVR BXM-4-64) on Debian 13 |
+| [lilyco-42/radxa_utlra](https://github.com/lilyco-42/radxa_utlra) | 0 | `scripts/gpu-check.sh` — 14-point GPU verification (kernel/DRM, Vulkan driverID, OpenCL compute + interrupt-counter proof) |
+
+### ✅ Verified on Radxa Debian 13, kernel `6.6.98-4-aw2511`
+
+Both Vulkan and OpenCL work out of the box — no extra installation needed. The Radxa image
+already ships the full DDK via the `xserver-xorg-img-bxm` package.
+
+```
+GPU0: PowerVR B-Series BXM-4-64 MC1
+      driverID          = DRIVER_ID_IMAGINATION_PROPRIETARY
+      apiVersion        = 1.3.277
+      driverInfo        = 24.2@6603887
+      conformanceVersion= 1.3.8.1        ← passes Khronos conformance
+      clock             = 600 MHz
+```
+
+```bash
+vulkaninfo --summary | grep -E 'deviceName|driverID'
+# → deviceName = PowerVR B-Series BXM-4-64 MC1
+# → driverID   = DRIVER_ID_IMAGINATION_PROPRIETARY
+
+clinfo | grep -E 'Device Name|Device Version'
+# → Device Name    = PowerVR B-Series BXM-4-64
+# → Device Version = OpenCL 3.0
+
+bash scripts/gpu-check.sh     # from lilyco-42/radxa_utlra — 14/14 pass
+```
+
+### ⚠️ Trap: `vulkaninfo` also lists a software-only device
+
+If `mesa-vulkan-drivers` is installed (Debian ships it by default), `vulkaninfo` will
+**unconditionally enumerate an extra lavapipe device**:
+
+```
+GPU0: PowerVR B-Series BXM-4-64 MC1     ← real GPU
+GPU1: (unnamed)                          ← Mesa lavapipe, CPU software rasterizer
+      vendorID = 0x10005
+      driverID = DRIVER_ID_MESA_LAVAPIPE
+```
+
+Seeing "Vulkan has a device" is therefore **not** proof that the GPU is in use. The only
+reliable check is `driverID`:
+
+```bash
+vulkaninfo --summary | grep DRIVER_ID_IMAGINATION_PROPRIETARY
+```
+
+This matters for benchmarks: a lavapipe result looks plausible but measures your CPU.
+
+### How to prove compute actually runs on the GPU
+
+Same methodology as the NPU section — watch the hardware interrupt counter, which cannot
+be faked:
+
+```bash
+grep pvrsrvkm /proc/interrupts
+# 481:  72  0  0  0  0  0  0  0  wakeupgen  63 Level  pvrsrvkm
+<run a 4M-element OpenCL vector add>
+grep pvrsrvkm /proc/interrupts
+# 481:  78  0  0  0  0  0  0  0  wakeupgen  63 Level  pvrsrvkm
+#       ↑ +6 — commands really reached the PowerVR hardware
+```
+
+### Component map
+
+| Part | Location | Source package |
+|------|----------|----------------|
+| Kernel driver | `pvrsrvkm`, binds `/soc@3000000/gpu@1800000` (`img,gpu`) | kernel BSP |
+| Render node | `/dev/dri/renderD128` (DRIVER=pvrsrvkm) | — |
+| Vulkan lib | `/usr/lib/libVK_IMG.so` → `libVK_IMG.so.24.2.6603887` | `xserver-xorg-img-bxm` |
+| Vulkan ICD | `/usr/share/vulkan/icd.d/img_icd.json` | same |
+| OpenCL lib | `/usr/lib/libPVROCL.so` | same |
+| OpenCL ICD | `/etc/OpenCL/vendors/powervr.icd` | same |
+
+Vulkan and OpenCL share the same DDK (`libsrv_um.so` + `pvrsrvkm`), so **if one works the
+other almost certainly does** — no separate bring-up required.
+
+### Notes and gotchas
+
+- `vkcube` defaults to X11; on a headless box it prints `Selected WSI platform: xlib` and exits.
+  This is **not** a rendering failure — use offscreen/`VK_EXT_headless_surface` to test without a display.
+- Compiling OpenCL host code needs `opencl-headers` (not installed by default on Debian).
+- `/dev/dri/renderD128` requires `video` group membership for non-root users.
+- The GPU has no independent `devfreq` node; clocking goes through CCF (`/sys/kernel/debug/clk/gpu0/`).
+- BXM-4-64 is a lightweight GPU (64 FP32 lanes). It fits rendering and light parallel compute;
+  **do not expect it to replace the NPU for deep-learning inference.**
 
 ## VPU / Video Engine
 
