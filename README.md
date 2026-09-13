@@ -55,9 +55,18 @@ kernel `6.6.98-4-aw2511`. Every row below was verified by direct experiment.
 > Also added this round: the measured **CPU LLM selection table** (Qwen3-0.6B leads at
 > 22.4 tok/s) and the retraction of speculative decoding on this board.
 
+> **🔎 2026-09-13 (later) — the "hangs" wall itself has been explained and partially
+> dismantled.** Root cause of the execution hang on Radxa 6.6: galcore prepares `clk_npu`
+> but never enables it (`clk_summary` shows `en=0` during an in-flight submission), and
+> the `pd_npu` power domain stays **off** (no VDD). Both fixed at runtime in
+> [`radxa_utlra` `install-npu-clk-fix.sh`](https://github.com/lilyco-42/radxa_utlra) —
+> submissions no longer wedge the kernel (clean 44 s failure + auto-recovery; llama
+> falls back to CPU). Layer 3 (reset/NSI bring-up) remains open, and the four toolchain
+> ceilings below stand regardless.
+
 | Accelerator | Interface | Init | **Data path** | Verdict |
 |---|---|---|---|---|
-| **NPU** (Vivante VIP9000) | `/dev/galcore` + `/dev/vipcore` | ✓ both drivers init, 1008 MHz | ⛔ **hangs at HW execution on BOTH routes** | ⛔ **Not usable on 6.6**; works on the 5.15 vendor kernel, but even then a **paradigm dead-end for LLM** — four hard ceilings, best measured 5.02 vs 18.1 tok/s CPU (see below). ✅ only for encoder-class work |
+| **NPU** (Vivante VIP9000) | `/dev/galcore` + `/dev/vipcore` | ✓ **root cause fixed**: `clk_npu` enabled + `pd_npu` on (runtime bypass) | ⛔ **hangs at HW execution on BOTH routes** | ⛔ **Not usable on 6.6**; works on the 5.15 vendor kernel, but even then a **paradigm dead-end for LLM** — four hard ceilings, best measured 5.02 vs 18.1 tok/s CPU (see below). ✅ only for encoder-class work |
 | **VE2** (HW H.264 encoder) | `/dev/cedar_dev_ve2` + `/dev/dma_heap/system` | ✓ interrupts fire | ✓ **Official suite 8/8 + rotation ALL PASS** | ✅ **Usable** |
 | **GPU** (PowerVR BXM-4-64) | `/dev/dri/renderD128` ✓ | ✓ `pvrsrvkm`, Vulkan 1.3.277 + OpenCL 3.0, 600 MHz | ✓ **OpenCL compute verified via IRQ delta** | ✅ **Usable** |
 | **VPU** (V4L2 M2M decode/encode) | no `/dev/video*` | — | — | ⛔ Not present (use the cedar interface instead) |
@@ -70,6 +79,21 @@ The A733 NPU can be driven by **two different kernel drivers**:
 |---|---|---|
 | `vipcore` (vendor, in BSP) | VIPLite 2.0.3.2 (`/dev/vipcore`) | ⛔ init OK, then **hangs**: `VIPDRV_WAIT_TASK status=-1`, `npu: VIP not going to idle` |
 | `galcore` (open, out-of-tree) | TIM-VX 1.2.22 (`/dev/galcore`) | ⛔ builds after a 9-hunk port, but **hangs on real compute** (see `-ngl` matrix below) |
+
+**Root cause & runtime bypass (2026-09-13, `radxa_utlra` `modules/npu_clk_fix.c`).** Two
+independent initialization defects on the Radxa 6.6 BSP, both proven and both fixed at
+runtime without touching galcore (no `rmmod` — that panics the board):
+
+| Layer | Defect | Evidence | Fix |
+|---|---|---|---|
+| 1. Clock | galcore calls `clk_prepare` but **never `clk_enable`** on `clk_npu` | `clk_summary`: `npu en=0 prep=1` sampled during an in-flight submission | `npu_clk_fix.ko`: `clk_prepare_enable()` → `en=1 @1.008 GHz` |
+| 2. Power | `pd_npu` genpd stays **off** (device suspended, no VDD) | `pm_genpd_summary`: `pd_npu off-0` | PM QoS pin: `echo on > .../3600000.npu/power/control` → `pd_npu on` |
+| 3. Reset/NSI | hardware still won't execute (44 s timeout → auto-recovery) | dmesg `core0 hang, recovery done`, TIM-VX returns `-1` | **open** — diff against `orangepi-xunlong/linux-orangepi` branch `orange-pi-6.6-sun60iw2` (petayyyy proved 6.6 works on that BSP) |
+
+Net effect: NPU submissions went from **kernel wedge + bricked board** to **clean 44 s
+failure with auto-recovery** while llama.cpp falls back to CPU. Install:
+`sudo ./scripts/install-npu-clk-fix.sh` in `radxa_utlra` (idempotent systemd service;
+it also repairs `vipcore` hijacking the device binding at boot).
 
 **`galcore` failure matrix** (controlled experiment — the `-ngl` variable finally fully covered):
 
