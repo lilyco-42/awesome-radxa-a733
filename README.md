@@ -43,9 +43,21 @@ kernel `6.6.98-4-aw2511`. Every row below was verified by direct experiment.
 > itself **retracted** — it relied on an invalid interrupt-counter criterion. Final NPU
 > verdict below. VE2 and GPU remain ✅ (their evidence survives scrutiny).
 
+> **📌 Updated 2026-09-13 — NPU verdict upgraded from "hangs" to "paradigm dead-end".**
+> A deep-dive into the field's best public work (petayyyy/a733_npu_driver, board-verified
+> on both 5.15.147 and **6.6.98-sun60iw2**) shows the hang is only the *first* wall.
+> Behind it sit **four hard toolchain ceilings** that make Qwen-class LLM inference
+> impossible on this NPU **even with a working driver** — no KV-cache (static-shape NBG,
+> O(W²) per-token recompute, coherence dies above W=64), ~6 GB/s effective decode
+> bandwidth (same bottleneck as CPU, so no win), no usable int4/int8 LLM quantisation,
+> and a 65536-dimension limit vs Qwen's 151,936 vocab. See
+> [The four hard ceilings](#the-four-hard-ceilings-why-qwen-class-llm-can-never-run-here).
+> Also added this round: the measured **CPU LLM selection table** (Qwen3-0.6B leads at
+> 22.4 tok/s) and the retraction of speculative decoding on this board.
+
 | Accelerator | Interface | Init | **Data path** | Verdict |
 |---|---|---|---|---|
-| **NPU** (Vivante VIP9000) | `/dev/galcore` + `/dev/vipcore` | ✓ both drivers init, 1008 MHz | ⛔ **hangs at HW execution on BOTH routes** | ⛔ **Not usable on 6.6**; works on the 5.15 vendor kernel, but even then negative ROI for LLM (5.02 vs 18.1 tok/s) |
+| **NPU** (Vivante VIP9000) | `/dev/galcore` + `/dev/vipcore` | ✓ both drivers init, 1008 MHz | ⛔ **hangs at HW execution on BOTH routes** | ⛔ **Not usable on 6.6**; works on the 5.15 vendor kernel, but even then a **paradigm dead-end for LLM** — four hard ceilings, best measured 5.02 vs 18.1 tok/s CPU (see below). ✅ only for encoder-class work |
 | **VE2** (HW H.264 encoder) | `/dev/cedar_dev_ve2` + `/dev/dma_heap/system` | ✓ interrupts fire | ✓ **Official suite 8/8 + rotation ALL PASS** | ✅ **Usable** |
 | **GPU** (PowerVR BXM-4-64) | `/dev/dri/renderD128` ✓ | ✓ `pvrsrvkm`, Vulkan 1.3.277 + OpenCL 3.0, 600 MHz | ✓ **OpenCL compute verified via IRQ delta** | ✅ **Usable** |
 | **VPU** (V4L2 M2M decode/encode) | no `/dev/video*` | — | — | ⛔ Not present (use the cedar interface instead) |
@@ -110,6 +122,36 @@ no KV-cache: Frigate detection, YOLO tracking, MediaPipe face landmarks, Embeddi
 on the Radxa BSP: NPU clock (`pll-npu` 1.008 GHz), power domain (`pck-600`), or
 completion-IRQ routing.
 
+### The four hard ceilings: why Qwen-class LLM can never run here
+
+The 6.6 hang is only the **first** wall. Even on a kernel where the vendor stack
+demonstrably runs (petayyyy drives `/dev/vipcore` on `6.6.98-sun60iw2`), four
+**toolchain-level** ceilings sit behind it. These are not engineering debt you can
+port away — they are a paradigm mismatch between **static-shape NBG graphs** and
+autoregressive decoding:
+
+| # | Ceiling | Consequence |
+|---|---|---|
+| 1 | **No KV-cache.** ACUITY/VIPLite only emit **static-shape** NBG graphs | Every new token re-runs the whole W-token context → O(W²) work; coherence collapses above **W ≈ 64**; there is no separate prefill stage. **Autoregressive chat is fundamentally incompatible with the NBG model.** |
+| 2 | **~6 GB/s effective decode bandwidth** — the 3 TOPS ALU is starved by 32-bit LPDDR5 (on-chip working pool only 0–345 KB) | Every forward pass is weight-read bound. **The CPU path is bandwidth-bound too, so the NPU buys nothing** on decode. |
+| 3 | **No usable int4/int8 LLM path** — public ACUITY offers only `pcq` (per-channel int8), incoherent at full depth; the only working precision is **int16** (1.45× slower, 2× larger) | You cannot fit or speed-run a modern quantised LLM. |
+| 4 | **65536-dimension limit** | Qwen's **151,936**-token vocab hits the wall head-on (chunking slips past ONNX Runtime but not past BF16 export). |
+
+**This is independently confirmed, not just our board:**
+
+- **petayyyy** (board-verified driver, 2026-09): SmolLM2-135M on NPU = **20.7 tok/s**,
+  MobileCLIP-S0 vision = **22.6 ms/frame @ cos 0.99996** — yet **Qwen2.5-0.5B NBG
+  export fails on all 8 attempted paths** (int16 cos 0.24; BF16 `vnn_VerifyGraph -3`;
+  FP16 cos 0.54; `pcq` hangs; mixed-dtype boundary errors).
+- **msazanov/vivante-vip9000-llm-lab**: after weeks of tuning, **0.97 tok/s**
+  full-model NPU decode.
+- **reef1994**, vendor-verified on 5.15.147: 24-layer NBG = **5.02 tok/s** vs 18.1 on CPU.
+
+**What the NPU *is* good for** — encoder-class work: static shape, one NBG call, no
+KV-cache. SmolLM2-135M in ≤64-token windows, visual encoders (MobileCLIP, SigLIP,
+MediaPipe face landmarks), YOLO person-tracking, Frigate detection — all in the repo
+table below. The winning architecture is **hybrid**: NPU for vision, CPU for the LLM.
+
 ### VE2: works completely, verified against source
 
 `mashiqi/A733-Cedarc` v0.1.11 passes its **entire official validation suite**:
@@ -137,6 +179,46 @@ does the work and the output is provably correct.
    `-r $fps -fps_mode cfr -video_track_timescale 90000`.
 2. **Non-zero exit code** from an unclean temp directory, which made the official
    validation script report a false FAIL.
+
+### CPU: measured LLM selection — what to actually run
+
+With the NPU out for chat, the real question is which CPU model to run. Every number
+below is **this board's own `llama-bench`** (`-dev none`, `-p 128 -n 128 -r 3`, mean of
+3 runs), all at **Q4_K_M** for fairness, decode measured at `-t 2` (`taskset -c 6,7`,
+only the two A76 cores — always faster than all 8 cores, because the A55s slow the GEMM
+down):
+
+| Rank | Model | Params | Q4_K_M file | prefill t/s | **decode t/s** |
+|---|---|---|---|---|---|
+| 🥇 | **Qwen3-0.6B** | 596M | 373 MiB | 63.4 | **22.4** |
+| 🥈 | **LFM2-700M** | 742M | 445 MiB | 45.9 | **21.2** |
+| 🥉 | Qwen2.5-0.5B | 630M | 463 MiB | 35.6 | **19.9** |
+| 4 | MiniCPM5-1B | 1.08B | 651 MiB | 41.6 | **16.7** |
+| 5 | LFM2-1.2B | 1.17B | 695 MiB | 27.5 | **13.8** |
+| 6 | Qwen3.5-0.8B | 752M | 497 MiB | 42.9 | **13.5** |
+
+**Two findings worth the table:**
+
+- **Q4_K_M beats Q8_0 on decode by 36%** (same model, Qwen3-0.6B: 22.38 vs 16.49 tok/s)
+  — but loses **27%** on prefill. Quantise down for interactive chat, up for long-prompt
+  RAG-style workloads.
+- **Qwen3.5-0.8B is a regression on this board** — 13.5 tok/s, 40% slower than the
+  previous-gen Qwen3-0.6B. Its headline gain (cheaper *prefill* from a linear-attention
+  hybrid) doesn't show up here either.
+
+**Recommendation:** `Qwen3-0.6B-Q4_K_M` + `taskset -c 6,7 -t 2` for interactive chat
+(22.4 tok/s, 373 MiB); `LFM2-700M-Q4_K_M` when you want 24% more parameters for only
+5.8% less speed; `MiniCPM5-1B` for local agents / tool-calling (16.7 tok/s, native MCP,
+128K context). For reference, the best NPU full-model decode was **5.02 tok/s** — the
+CPU wins by ~4.5×.
+
+**Speculative decoding: retracted on this board.** Three controlled runs
+(Qwen3-0.6B-Q4_K_M target + Q2_K draft, 2×A76): baseline **20.83** / draft bound to the
+A55s **21.29** (+2.2%) / draft bound to the big cores **20.02** (−3.9%). No net win.
+Root cause: the **target** already runs at ~20 tok/s (bandwidth-bound) while the A55
+draft reaches only ~10 tok/s — the draft is *slower than the target it is supposed to
+feed*. Speculation trades compute for bandwidth; on this SoC the trade points the wrong
+way. Direction closed.
 
 ### The lesson (applies to any SBC accelerator work)
 
@@ -229,6 +311,13 @@ The A733 features a Vivante VIP9000 NPU with 3 TOPS @ INT8. The device node is `
 | [arnaudlvq/MediaPipe-FaceLandmarker-NPU-Version-A733-VeriSilicon-VIP9000](https://github.com/arnaudlvq/MediaPipe-FaceLandmarker-NPU-Version-A733-VeriSilicon-VIP9000) | 0 | MediaPipe face landmarks on the A733 NPU |
 | [unnamedwild-ux/frigate_npu_vivante](https://github.com/unnamedwild-ux/frigate_npu_vivante) | 4 | Frigate (NVR/surveillance) running on Vivante VIP9000 NPU |
 | [msazanov/vivante-vip9000-llm-lab](https://github.com/msazanov/vivante-vip9000-llm-lab) | 0 | Evidence-driven LLM-on-NPU lab (updated 2026-09): best full-model NPU decode 0.97 tok/s; documents LPDDR bandwidth (controller readback 510 MHz) |
+| [rhiqday/a733-npu-viplite](https://github.com/rhiqday/a733-npu-viplite) | 1 | **Reverse-engineered `vip_lite.h`** + working example code for running your own NBG on VIP9000 via the on-device VIPLite runtime (tested on Orange Pi 4 Pro / Android 13). Fills the "no public header, no docs" gap |
+| [Thenukegun10x/a733-NPU-htop](https://github.com/Thenukegun10x/a733-NPU-htop) | 0 | htop-style task manager for the A733 NPU (utilisation/telemetry) |
+| [Ronin-1124/cubie-a7a-voice-assistant](https://github.com/Ronin-1124/cubie-a7a-voice-assistant) | 1 | Offline Chinese voice assistant for the Cubie A7A — the kind of workload (ASR/KWS/VAD) where the NPU can actually pay off |
+| [senijus/smart_retail](https://github.com/senijus/smart_retail) | 0 | Unattended retail terminal on A733 + NPU: camera product recognition → counting → checkout, offline-capable |
+| [konqoro/nim-viplite](https://github.com/konqoro/nim-viplite) · [jeasonzs/viplite-driver](https://github.com/jeasonzs/viplite-driver) | 2 / 1 | VIPLite bindings/driver packaging — useful when wiring the vendor runtime into your own app |
+| [onnxruntime#28244](https://github.com/Microsoft/onnxruntime/issues/28244) | — | Community request for a **VIPLite Execution Provider** in ONNX Runtime (A733/T527). Open since 2026-04, now **stale with no vendor response** — the one upstream integration that would make NPU usable from mainstream stacks |
+| [hqu-little-boy/archlinuxarm-a733](https://github.com/hqu-little-boy/archlinuxarm-a733) | 0 | Arch Linux ARM packages for Cubie A7A: kernel `5.15.147` (BSP) + U-Boot 2018.07. Handy if you want the **5.15** line where the vendor NPU stack is verified |
 | [Haidegger22/orangepi-zero3w-gpu-npu-vpu-debian11](https://github.com/Haidegger22/orangepi-zero3w-gpu-npu-vpu-debian11) | 1 | Orange Pi Zero 3W (A733) GPU/NPU/VPU Debian 11 setup guide |
 | [HBConline/orangepi4pro-skill](https://github.com/HBConline/orangepi4pro-skill) | 3 | Agent skill for Orange Pi 4 Pro (A733): embedded Linux, edge AI (3 TOPS NPU), GPIO/wiringOP, Android 13 AOSP. Encodes 263-page official manual |
 
