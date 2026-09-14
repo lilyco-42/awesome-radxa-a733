@@ -64,6 +64,21 @@ kernel `6.6.98-4-aw2511`. Every row below was verified by direct experiment.
 > falls back to CPU). Layer 3 (reset/NSI bring-up) remains open, and the four toolchain
 > ceilings below stand regardless.
 
+> **🔧 2026-09-14 — full hardware re-probe + router capability verified.**
+> Ran a read-only probe across 24 hardware classes
+> ([`hw-probe.sh`](https://github.com/lilyco-42/radxa_utlra/blob/main/scripts/hw-probe.sh)).
+> New this round: the **I2C device map** (`24c16` EEPROM · `axp8191` PMIC · `hym8563` RTC ·
+> `sunxi-ac101b` codec · HDMI DDC), the DRM **dual-card** layout (`sunxi-drm` + `pvrsrvkm`,
+> plus an unused **Writeback connector**), **dual sound cards** (HDMI + onboard 3.5 mm),
+> **416 GPIO lines / 30 PWM channels**, watchdog, and CPU crypto acceleration
+> (`aes` / `pmull` / `sha1` / `sha2` / `crc32`).
+> Two new **gotchas**: the gigabit NIC needs an **RGMII tx-delay fix** (factory `12`
+> corrupts TX frames — PPPoE cannot even finish discovery), and the **fan runs
+> full-speed by default** (`4/4`) while thermals sit at 31–37 °C.
+> Also: `spi0` has no `/dev/spidev*`, and none of the 9 UARTs are exposed as `/dev/ttyS*`.
+> The board is now verified as a **working router** (PPPoE + WiFi AP + NAT, end-to-end).
+> Details: [hardware asset report](radxa_a7a_hardware_assets.md) §11–§13.
+
 | Accelerator | Interface | Init | **Data path** | Verdict |
 |---|---|---|---|---|
 | **NPU** (Vivante VIP9000) | `/dev/galcore` + `/dev/vipcore` | ✓ **root cause fixed**: `clk_npu` enabled + `pd_npu` on (runtime bypass) | ⛔ **hangs at HW execution on BOTH routes** | ⛔ **Not usable on 6.6**; works on the 5.15 vendor kernel, but even then a **paradigm dead-end for LLM** — four hard ceilings, best measured 5.02 vs 18.1 tok/s CPU (see below). ✅ only for encoder-class work |

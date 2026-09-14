@@ -211,6 +211,20 @@ OpenCL 库已安装 (`libOpenCL.so.1`), 理论上可用于:
 | 电源按键 | 有 | |
 | UBOOT 按键 | 有 | |
 
+### I2C 总线（2026-09-14 实测设备表）
+
+| 总线 | 地址 | 设备 | 用途 |
+|------|------|------|------|
+| `i2c-0` | `0x50` | `24c16` | **板载 EEPROM**（2Kbit） |
+| | `0x51`–`0x57` | dummy | 设备树占位（无实体设备） |
+| `i2c-13` | `0x36` | `axp8191` | **PMIC** |
+| `i2c-14` | `0x51` | `hym8563` | **RTC** |
+| `i2c-15` | `0x3e` | `sunxi-ac101b` | **音频 codec** |
+| `i2c-20` | — | `SUNXI HDMI` | **HDMI DDC** 通道 |
+
+> `i2cdetect` 在空总线上会产生大量内核错误日志（`drv-mode: xfer failed`），属正常现象。
+> 表里的 `UU` 表示该地址已被内核驱动占用。
+
 ### 存储/启动
 | 接口 | 说明 |
 |------|------|
@@ -294,18 +308,20 @@ OpenCL 库已安装 (`libOpenCL.so.1`), 理论上可用于:
 
 ## 10. 当前板子配置实测
 
+> 首次实测 2026-09-04；**2026-09-14 全量复查更新**（探测方法与完整输出见第 13 节）
+
 | 项目 | 值 |
 |------|-----|
 | OS | Debian 13 (trixie), aarch64 |
 | 内核 | 6.6.98-4-aw2511 (BSP 内核, 非主线) |
-| 可用内存 | 3.8Gi (used 2.3Gi, free 686Mi, buff/cache 953Mi) |
+| 可用内存 | 3.8Gi total / 3.4Gi available |
 | Swap | 1.9Gi (zram 压缩) |
 | eMMC | 55GB (54.7GB 根分区) |
-| 网络 | 千兆有线 (end0, UP) + WiFi 6 (wlan0, DOWN) |
+| 网络 | 千兆有线 (end0, UP) + WiFi 6 (wlan0, **UP — 可开 AP**) |
 | 蓝牙 | hci0 UP RUNNING |
-| CPU 频率策略 | ondemand |
+| CPU 频率策略 | **schedutil**（A76 12 档 416M~2002M / A55 9 档 416M~1794M） |
 | 当前温度 | 31-37°C (各传感器) |
-| 风扇 | 全速 (4/4) |
+| 风扇 | **全速 (4/4)，且未走温控** — 见第 12 节第 10 条 |
 | ffmpeg | 7.1.5-0+deb13u1 (soft encode only) |
 | 已装关键软件 | ffmpeg, ImageMagick, rclone, yt-dlp, espeak-ng, faster-whisper |
 
@@ -313,24 +329,29 @@ OpenCL 库已安装 (`libOpenCL.so.1`), 理论上可用于:
 
 ## 11. 未榨干的硬件能力
 
+> 状态已按 **2026-09-14** 全量复查更新
+
 | 能力 | 现状 | 潜在价值 | 激活难度 |
 |------|------|---------|---------|
-| **VPU 硬件编解码** | 驱动未加载, 只能软编 | 视频编码 4K@30fps, 可能 3-5× 加速 | 高 (需内核重编或等 BSP 更新) |
-| **NPU 3 TOPS** | `/dev/vipcore` 存在但无用户态库 | YOLOv8/MobileCLIP 视觉推理, 小 LLM | 中 (安装 VIPLite SDK + ACUITY 工具链) |
-| **GPU OpenCL** | 库已装但未实际使用 | 图像处理加速 (ffmpeg opencl 滤镜) | 低 (直接可用) |
-| **GPU Vulkan** | 驱动已装 | 高效渲染/计算 | 低 |
+| **VE2 硬件编码** | ✅ **已榨干** — `/dev/cedar_dev_ve2`，1080p@60≈68fps / 4K≈22fps，仅 27% 单核 | — | 已完成 |
+| **GPU Vulkan + OpenCL** | ✅ **已榨干** — Vulkan 1.3.277 + OpenCL 3.0，14/14 验证通过 | — | 已完成 |
+| **NPU 3 TOPS** | ⛔ **封存** — 三层根因，第三层卡 boot chain；且即使修好对 LLM 也是负收益 | 仅编码器类（YOLO/CLIP）理论正收益 | 极高（需 boot chain 层修复） |
 | **RISC-V E902 MCU** | SoC 内置, 无法直接访问 | 超低功耗实时任务 | 高 (需 SDK, 通常仅 Android/Tina 用) |
-| **硬件加密引擎** | 内核内置但未暴露用户接口 | TLS/VPN/存储加密加速 | 中 |
+| **硬件加密引擎** | ⚠️ CPU 侧 `aes/pmull/sha1/sha2/crc32` 已注册（`/proc/crypto` 370 条，含 `ghash`/`cmac(aes)`）；未见独立 DMA 加密引擎暴露 | TLS/VPN/存储加密加速 | 中（CPU 指令级已可用，DMA 引擎待查） |
 | **MIPI CSI 摄像头** | 未连接 | 摄像头输入 (安防/视觉) | 低 (接 CSI 模块) |
 | **E-ink 输出** | SoC 支持 | 电子墨水屏显示 | 中 (需驱动配置) |
 | **PoE 供电** | 需 PoE HAT | 单线网线供电+联网 | 低 (买 PoE HAT) |
-| **PCIe 3.0 NVMe** | 需 M.2 扩展板 | 高速存储 | 低 (买扩展板+SSD) |
+| **PCIe 3.0 NVMe** | 需 M.2 扩展板；当前只枚举到 Root Complex 桥（class `0x060400`），FPC 上无设备 | 高速存储 | 低 (买扩展板+SSD) |
+| **SPI / UART 用户态** | ⚠️ `spi0` 存在但**无 `/dev/spidev*`**；SoC 的 9 个 UART **均未暴露为 `/dev/ttyS*`** | 接 SPI 外设 / 多串口 | 中 (加 device-tree overlay) |
+| **Writeback 连接器** | ⚠️ 未使用 — `card0-Writeback-1` 已注册 | 屏幕回环录制 / 无显示器时的合成输出 | 低（需调 DRM API） |
 
 ---
 
 ## 12. 已知限制与坑
 
-1. **VPU 硬件编解码不可用** — 当前 BSP 内核未加载 V4L2 M2M 驱动, `/dev/video*` 不存在。Cedrus 开源驱动不支持 A733 (最高到 H6)。
+1. ~~**VPU 硬件编解码不可用**~~ → **已修正（2026-09-13/14）**：VE2 编码**完全可用**
+   （`/dev/cedar_dev_ve2`，1080p@60≈68fps / 4K≈22fps）。但注意 **VE2 不是 V4L2 设备** ——
+   `/dev/video*` 确实不存在，用 `ls /dev/video*` 判断会得出**错误结论**。
 2. **RTC 唤醒不可靠** — 实测 `rtcwake -m mem -s 100` 后板子无法自醒, I2C RTC 中断脚未接 PMIC 唤醒线路。
 3. **NPU 无 KV-cache** — VIP9000 静态形状 NBG, 无法运行带 KV-cache 的 LLM (Qwen 级别全部失败)。
 4. **NPU 不是 LLM 加速器** — 3 TOPS 适合 CNN/视觉, 不适合 Transformer (推荐 RK3588 跑 LLM)。
@@ -338,10 +359,95 @@ OpenCL 库已安装 (`libOpenCL.so.1`), 理论上可用于:
 6. **PCIe 仅 ×1** — 单通道, NVMe 速度上限 ~8GT/s (PCIe 3.0 ×1)。
 7. **内存不可升级** — LPDDR5 板载, 选 4GB 版就是 4GB, 最多到 16GB 需购买时选配。
 8. **非主线内核** — 6.6.98-4-aw2511 是 Allwinner BSP, 不是 mainline Linux, 社区驱动兼容性存疑。
+9. **千兆网口 RGMII tx-delay 错误**（2026-09-14 新发现）— 出厂值 `12` 下**发帧是损坏的**
+   （实测 1200 字节帧丢 42%），症状极具误导性：链路报 1000/full、`tx_errors` 为 **0**、
+   短 ping 正常，**但 PPPoE 连发现阶段都过不去**、SSH 密钥交换后卡死、`apt` 卡住。
+   正解：`echo 9 > /sys/class/net/end0/device/tx_delay`（9/10/11 均可；**重启即丢**）。
+   ⚠️ **数据相关** —— 重复字节负载 0 丢包，必须用随机数据才暴露。
+10. **风扇默认全速常转** — `pwm-fan` 的 `cur_state` 是 `4/4`（满档），而各热区只有 31~37°C，
+    远低于 trip point（60°C）。说明风扇**没走温控**，白转白吵。可手动降档：
+    `echo 1 | sudo tee /sys/class/thermal/cooling_device2/cur_state`
+11. **SPI / UART 未暴露到用户态** — `spi0` 存在但没有 `/dev/spidev*`；SoC 有 9 个 UART
+    却一个都没出来成 `/dev/ttyS*`。要用得加 device-tree overlay。
+12. **NPU 的 devfreq cooling device 消失了** — 早期实测有 `devfreq-3600000.npu`，
+    当前内核下 cooling_device 只剩 `cpufreq-cpu0` / `cpufreq-cpu6` / `pwm-fan`。
+13. **PCIe 只枚举到 Root Complex** — `0000:00:00.0`（vendor `0x1f6d` / class `0x060400`）
+    是 PCI-to-PCI 桥本身，不是外接设备。FPC 上没插东西时别误判成"有 PCIe 设备"。
 
 ---
 
-## 13. 数据来源
+## 13. 2026-09-14 全量探测补充（hw-probe）
+
+在板子上跑了一次只读全量探测（24 类硬件，约 200 行结构化输出）。脚本已纳入
+[`radxa_utlra` 的 `scripts/hw-probe.sh`](https://github.com/lilyco-42/radxa_utlra/blob/main/scripts/hw-probe.sh)。
+
+### 显示 / 图形
+
+| 节点 | 驱动 | 说明 |
+|------|------|------|
+| `card0` | `sunxi-drm` | 显示控制器（`/soc@3000000/sunxi-drm`） |
+| `card0-HDMI-A-1` | — | HDMI 输出（实测 `disconnected`） |
+| `card0-Writeback-1` | — | **Writeback 连接器**（可做屏幕回环 / 合成输出） |
+| `card1` | `pvrsrvkm` | GPU（`/soc@3000000/gpu@1800000`） |
+| `renderD128` | — | GPU 渲染节点 |
+
+### 音频（双声卡，均可用）
+
+| 卡号 | 名称 | 用途 |
+|------|------|------|
+| card0 | `allwinner-hdmi` | HDMI 音频输出 |
+| card1 | `sunxi-ac101b` | **板载 3.5mm 耳机口**（codec 在 i2c-15 @`0x3e`） |
+
+### 扩展接口实测
+
+| 接口 | 实测 |
+|------|------|
+| GPIO | `gpiochip0 [2000000.pinctrl]` 352 线 + `gpiochip1 [7025000.pinctrl]` 64 线 = **416 线** |
+| PWM | `pwmchip0/10/20`，各 10 通道 = **30 通道** |
+| ADC | `iio:device0: 2521000.gpadc`（IIO 接口） |
+| SPI | `spi0` 存在，**无 `/dev/spidev*`** |
+| UART | **无 `/dev/ttyS*`** |
+| 看门狗 | `/dev/watchdog` + `/dev/watchdog0` |
+| PCIe | `0000:00:00.0`，vendor `0x1f6d` / device `0xabcd` / class `0x060400`（Root Complex 桥） |
+
+### 热区触发阈值
+
+| 热区 | trip_point_0 |
+|------|--------------|
+| `cpub` / `cpul` / `gpu` | 60°C |
+| `cpul_idle` / `cpub_idle` | 90°C |
+| `ddr` / `npu` | 110°C |
+| `skin`（表壳） | 50°C |
+
+### CPU 调频档位与健康度
+
+- A76：12 档，`416000 ~ 2002000`
+- A55：9 档，`416000 ~ 1794000`
+- governor：`schedutil`
+
+开机 4 小时的 `time_in_state`：A76 在 416MHz 停了 1516s、在 2002MHz 停了 2.2s；
+A55 在 1794MHz 停了 99s。
+
+> ⚠️ **易误判点**：瞬时看到 `cpu6 = 416000` 别以为"大核被锁低频" ——
+> 那是空闲态；`time_in_state` 证明它上过最高频，调频正常。
+
+### CPU 硬件加速
+
+`aes` `pmull` `sha1` `sha2` `crc32` `asimd` `asimdhp`；
+`/proc/crypto` 共 370 行，含 `ghash`、`cmac(aes)`、`ecb(aes)`、`ecdh-nist-p*`、
+`pkcs1pad(rsa,sha256)` —— 支持 AES-GCM / SHA / CRC32 硬件加速。
+
+### 网络（2026-09-14 补充）
+
+- `end0` 千兆口可跑 **PPPoE 拨号**（需先修 tx-delay，见第 12 节第 9 条）
+- `wlan0` 可开 **AP 热点**（NetworkManager `nmcli device wifi hotspot`），
+  驱动声明支持 `AP` 模式
+- 两者可组合成一台完整路由器：PPPoE 上行 + WiFi 热点 + NAT 转发，
+  已端到端实测（客户端 `curl` 200 / 58ms）
+
+---
+
+## 14. 数据来源
 
 | 来源 | URL |
 |------|-----|
