@@ -79,9 +79,37 @@ kernel `6.6.98-4-aw2511`. Every row below was verified by direct experiment.
 > The board is now verified as a **working router** (PPPoE + WiFi AP + NAT, end-to-end).
 > Details: [hardware asset report](radxa_a7a_hardware_assets.md) §11–§13.
 
+> **⚡ 2026-09-14 (later) — NPU verdict CORRECTED: it works, our image was the problem.**
+> We previously reported "NPU hangs on 6.6 via both routes". That conclusion was
+> **under-evidenced and is retracted**. Two things were wrong:
+> 1. Our `radxa-a733_trixie` image **ships no NPU driver at all** — `/dev/vipcore` never
+>    exists (`modinfo sunxi_npu` → not found; no `npu` dir under
+>    `/lib/modules/*/kernel/drivers/`; **zero** NPU lines in a 1119-line `dmesg`).
+> 2. What we actually tested was the **`galcore` / TIM-VX** route. The supported route is
+>    **`sunxi_npu` → `/dev/vipcore` + VIPLite** — a completely different driver path.
+>
+> **Board-level evidence**: following Radxa's official guide we built and ran `vpm_run`.
+> The userspace stack is fully ready — `VIPLite driver software version
+> 2.0.3.2-AW-2024-08-30` — and the *only* failure is `fail to open device /dev/vipcore`.
+>
+> Radxa's forum has an identical case; their answer: **`radxa-a733_trixie` T5 is a test
+> image, not recommended for NPU work — switch to `radxa-a733_bullseye_kde_r5`.**
+>
+> The NPU is **officially supported** on A7A (NPU v3 / software v2.0) and widely
+> validated by the community: an **offline voice assistant for Cubie A7A** (featured in
+> Radxa's own docs — KWS+ASR+TTS all on NPU), YOLOv5s tracking, MediaPipe face
+> landmarks, SmolLM2-135M/360M at 21/8 tok/s, and EDSR x2 upscaling at 236 ms.
+>
+> **What still stands**: even with a working NPU, Qwen-class LLM inference remains a net
+> loss on this chip (LPDDR5 bandwidth ceiling). Its right role is **encoder-class work**
+> (CNN/ViT, detection, embeddings) — not LLM acceleration.
+>
+> Full write-up:
+> [radxa_utlra · docs/a733-npu-usable-path.md](https://github.com/lilyco-42/radxa_utlra/blob/main/docs/a733-npu-usable-path.md)
+
 | Accelerator | Interface | Init | **Data path** | Verdict |
 |---|---|---|---|---|
-| **NPU** (Vivante VIP9000) | `/dev/galcore` + `/dev/vipcore` | ✓ **root cause fixed**: `clk_npu` enabled + `pd_npu` on (runtime bypass) | ⛔ **hangs at HW execution on BOTH routes** | ⛔ **Not usable on 6.6**; works on the 5.15 vendor kernel, but even then a **paradigm dead-end for LLM** — four hard ceilings, best measured 5.02 vs 18.1 tok/s CPU (see below). ✅ only for encoder-class work |
+| **NPU** (Vivante VIP9000) | `/dev/vipcore` + VIPLite (**not** `/dev/galcore`) | ✓ **officially supported** (A7A = NPU v3 / SW v2.0) | ⚠️ **blocked by our image, not the hardware** — `radxa-a733_trixie` ships no NPU driver | ⚠️ **Usable after switching to `radxa-a733_bullseye_kde_r5`** (see the 2026-09-14 correction above). Community-validated for encoder-class work; still a net loss for Qwen-class LLM (bandwidth ceiling) |
 | **VE2** (HW H.264 encoder) | `/dev/cedar_dev_ve2` + `/dev/dma_heap/system` | ✓ interrupts fire | ✓ **Official suite 8/8 + rotation ALL PASS** | ✅ **Usable** |
 | **GPU** (PowerVR BXM-4-64) | `/dev/dri/renderD128` ✓ | ✓ `pvrsrvkm`, Vulkan 1.3.277 + OpenCL 3.0, 600 MHz | ✓ **OpenCL compute verified via IRQ delta** | ✅ **Usable** |
 | **VPU** (V4L2 M2M decode/encode) | no `/dev/video*` | — | — | ⛔ Not present (use the cedar interface instead) |

@@ -124,6 +124,17 @@ OpenCL 库已安装 (`libOpenCL.so.1`), 理论上可用于:
 
 ## 5. NPU: Vivante VIP9000 (3 TOPS)
 
+> **⚠️ 2026-09-14 修正：本节结论已过时。**
+> NPU **可用**，有官方支持（A7A = NPU v3 / 软件 v2.0）和社区大量验证
+> （A7A 离线语音助手、YOLOv5s 追踪、MediaPipe 人脸、SmolLM2 135M/360M、EDSR 超分）。
+> 之前判「封存」有两个错误：① 当前 `trixie` 镜像**没编 NPU 驱动**（缺 `/dev/vipcore`）；
+> ② 我们测的是 `galcore` / TIM-VX 路线，而官方与社区走的是 **`sunxi_npu` + VIPLite**。
+> 板端实测：VIPLite 2.0.3.2 用户态库加载成功，唯一报错是 `fail to open device /dev/vipcore`。
+> → 完整调研：[radxa_utlra · docs/a733-npu-usable-path.md](https://github.com/lilyco-42/radxa_utlra/blob/main/docs/a733-npu-usable-path.md)
+>
+> **仍然成立的部分**：即使 NPU 跑通，对 Qwen 级 LLM 仍是负收益（LPDDR5 带宽天花板）；
+> 它的正确定位是编码器类任务。
+
 ### 硬件状态
 | 项目 | 值 |
 |------|-----|
