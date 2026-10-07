@@ -6,7 +6,7 @@ The Allwinner A733 is a 12nm SoC featuring 2x Cortex-A76 @ 2.0GHz + 6x Cortex-A5
 
 ## Table of Contents
 
-- [Verified Hardware Status (Radxa kernel 6.6.98-4-aw2511)](#verified-hardware-status-radxa-kernel-6698-4-aw2511) ‚òÖ **read this first**
+- [Verified Hardware Status (Radxa kernel 6.6.98-4-aw2511)](#verified-hardware-status-radxa-kernel-6698-4-aw2511) ‚ò?**read this first**
 - [Kernels & Firmware](#kernels--firmware)
 - [OS Images & Distros](#os-images--distros)
 - [NPU (Neural Processing Unit)](#npu-neural-processing-unit)
@@ -35,19 +35,19 @@ The Allwinner A733 is a 12nm SoC featuring 2x Cortex-A76 @ 2.0GHz + 6x Cortex-A5
 Hands-on test results on a **Radxa Cubie A7A** running Debian 13 (Trixie), glibc 2.41,
 kernel `6.6.98-4-aw2511`. Every row below was verified by direct experiment.
 
-> **‚ö†Ô∏è Corrected twice on 2026-09-12 ‚Äî read the current version.**
+> **‚ö†Ô∏è Corrected twice on 2026-09-12 ‚Ä?read the current version.**
 > 1st correction: an earlier revision marked NPU and VE2 as unusable; that came from
 > testing the wrong driver paths (original analysis preserved in
 > [Appendix A: Retracted findings](#appendix-a-retracted-findings)).
 > 2nd correction (final): the "NPU works via `galcore`" claim from the 1st correction was
-> itself **retracted** ‚Äî it relied on an invalid interrupt-counter criterion. Final NPU
-> verdict below. VE2 and GPU remain ‚úÖ (their evidence survives scrutiny).
+> itself **retracted** ‚Ä?it relied on an invalid interrupt-counter criterion. Final NPU
+> verdict below. VE2 and GPU remain ‚ú?(their evidence survives scrutiny).
 
-> **üìå Updated 2026-09-13 ‚Äî NPU verdict upgraded from "hangs" to "paradigm dead-end".**
+> **üìå Updated 2026-09-13 ‚Ä?NPU verdict upgraded from "hangs" to "paradigm dead-end".**
 > A deep-dive into the field's best public work (petayyyy/a733_npu_driver, board-verified
 > on both 5.15.147 and **6.6.98-sun60iw2**) shows the hang is only the *first* wall.
 > Behind it sit **four hard toolchain ceilings** that make Qwen-class LLM inference
-> impossible on this NPU **even with a working driver** ‚Äî no KV-cache (static-shape NBG,
+> impossible on this NPU **even with a working driver** ‚Ä?no KV-cache (static-shape NBG,
 > O(W¬≤) per-token recompute, coherence dies above W=64), ~6 GB/s effective decode
 > bandwidth (same bottleneck as CPU, so no win), no usable int4/int8 LLM quantisation,
 > and a 65536-dimension limit vs Qwen's 151,936 vocab. See
@@ -55,16 +55,15 @@ kernel `6.6.98-4-aw2511`. Every row below was verified by direct experiment.
 > Also added this round: the measured **CPU LLM selection table** (Qwen3-0.6B leads at
 > 22.4 tok/s) and the retraction of speculative decoding on this board.
 
-> **üîé 2026-09-13 (later) ‚Äî the "hangs" wall itself has been explained and partially
+> **üîé 2026-09-13 (later) ‚Ä?the "hangs" wall itself has been explained and partially
 > dismantled.** Root cause of the execution hang on Radxa 6.6: galcore prepares `clk_npu`
 > but never enables it (`clk_summary` shows `en=0` during an in-flight submission), and
 > the `pd_npu` power domain stays **off** (no VDD). Both fixed at runtime in
-> [`radxa_utlra` `install-npu-clk-fix.sh`](https://github.com/lilyco-42/radxa_utlra) ‚Äî
-> submissions no longer wedge the kernel (clean 44 s failure + auto-recovery; llama
+> [`radxa_utlra` `install-npu-clk-fix.sh`](https://github.com/lilyco-42/radxa_utlra) ‚Ä?> submissions no longer wedge the kernel (clean 44 s failure + auto-recovery; llama
 > falls back to CPU). Layer 3 (reset/NSI bring-up) remains open, and the four toolchain
 > ceilings below stand regardless.
 
-> **üîß 2026-09-14 ‚Äî full hardware re-probe + router capability verified.**
+> **üîß 2026-09-14 ‚Ä?full hardware re-probe + router capability verified.**
 > Ran a read-only probe across 24 hardware classes
 > ([`hw-probe.sh`](https://github.com/lilyco-42/radxa_utlra/blob/main/scripts/hw-probe.sh)).
 > New this round: the **I2C device map** (`24c16` EEPROM ¬∑ `axp8191` PMIC ¬∑ `hym8563` RTC ¬∑
@@ -73,97 +72,97 @@ kernel `6.6.98-4-aw2511`. Every row below was verified by direct experiment.
 > **416 GPIO lines / 30 PWM channels**, watchdog, and CPU crypto acceleration
 > (`aes` / `pmull` / `sha1` / `sha2` / `crc32`).
 > Two new **gotchas**: the gigabit NIC needs an **RGMII tx-delay fix** (factory `12`
-> corrupts TX frames ‚Äî PPPoE cannot even finish discovery), and the **fan runs
-> full-speed by default** (`4/4`) while thermals sit at 31‚Äì37 ¬∞C.
+> corrupts TX frames ‚Ä?PPPoE cannot even finish discovery), and the **fan runs
+> full-speed by default** (`4/4`) while thermals sit at 31‚Ä?7 ¬∞C.
 > Also: `spi0` has no `/dev/spidev*`, and none of the 9 UARTs are exposed as `/dev/ttyS*`.
 > The board is now verified as a **working router** (PPPoE + WiFi AP + NAT, end-to-end).
-> Details: [hardware asset report](radxa_a7a_hardware_assets.md) ¬ß11‚Äì¬ß13.
+> Details: [hardware asset report](radxa_a7a_hardware_assets.md) ¬ß11‚Äì¬?3.
 
-> **‚ö° 2026-09-14 (later) ‚Äî NPU verdict CORRECTED: it works, our image was the problem.**
+> **‚ö?2026-09-14 (later) ‚Ä?NPU verdict CORRECTED: it works, our image was the problem.**
 > We previously reported "NPU hangs on 6.6 via both routes". That conclusion was
 > **under-evidenced and is retracted**. Two things were wrong:
-> 1. Our `radxa-a733_trixie` image **ships no NPU driver at all** ‚Äî `/dev/vipcore` never
->    exists (`modinfo sunxi_npu` ‚Üí not found; no `npu` dir under
+> 1. Our `radxa-a733_trixie` image **ships no NPU driver at all** ‚Ä?`/dev/vipcore` never
+>    exists (`modinfo sunxi_npu` ‚Ü?not found; no `npu` dir under
 >    `/lib/modules/*/kernel/drivers/`; **zero** NPU lines in a 1119-line `dmesg`).
 > 2. What we actually tested was the **`galcore` / TIM-VX** route. The supported route is
->    **`sunxi_npu` ‚Üí `/dev/vipcore` + VIPLite** ‚Äî a completely different driver path.
+>    **`sunxi_npu` ‚Ü?`/dev/vipcore` + VIPLite** ‚Ä?a completely different driver path.
 >
 > **Board-level evidence**: following Radxa's official guide we built and ran `vpm_run`.
-> The userspace stack is fully ready ‚Äî `VIPLite driver software version
-> 2.0.3.2-AW-2024-08-30` ‚Äî and the *only* failure is `fail to open device /dev/vipcore`.
+> The userspace stack is fully ready ‚Ä?`VIPLite driver software version
+> 2.0.3.2-AW-2024-08-30` ‚Ä?and the *only* failure is `fail to open device /dev/vipcore`.
 >
 > Radxa's forum has an identical case; their answer: **`radxa-a733_trixie` T5 is a test
-> image, not recommended for NPU work ‚Äî switch to `radxa-a733_bullseye_kde_r5`.**
+> image, not recommended for NPU work ‚Ä?switch to `radxa-a733_bullseye_kde_r5`.**
 >
 > The NPU is **officially supported** on A7A (NPU v3 / software v2.0) and widely
 > validated by the community: an **offline voice assistant for Cubie A7A** (featured in
-> Radxa's own docs ‚Äî KWS+ASR+TTS all on NPU), YOLOv5s tracking, MediaPipe face
+> Radxa's own docs ‚Ä?KWS+ASR+TTS all on NPU), YOLOv5s tracking, MediaPipe face
 > landmarks, SmolLM2-135M/360M at 21/8 tok/s, and EDSR x2 upscaling at 236 ms.
 >
 > **What still stands**: even with a working NPU, Qwen-class LLM inference remains a net
 > loss on this chip (LPDDR5 bandwidth ceiling). Its right role is **encoder-class work**
-> (CNN/ViT, detection, embeddings) ‚Äî not LLM acceleration.
+> (CNN/ViT, detection, embeddings) ‚Ä?not LLM acceleration.
 >
 > Full write-up:
 > [radxa_utlra ¬∑ docs/a733-npu-usable-path.md](https://github.com/lilyco-42/radxa_utlra/blob/main/docs/a733-npu-usable-path.md)
 
 | Accelerator | Interface | Init | **Data path** | Verdict |
 |---|---|---|---|---|
-| **NPU** (Vivante VIP9000) | `/dev/vipcore` + VIPLite (**not** `/dev/galcore`) | ‚úì **officially supported** (A7A = NPU v3 / SW v2.0) | ‚ö†Ô∏è **blocked by our image, not the hardware** ‚Äî `radxa-a733_trixie` ships no NPU driver | ‚ö†Ô∏è **Usable after switching to `radxa-a733_bullseye_kde_r5`** (see the 2026-09-14 correction above). Community-validated for encoder-class work; still a net loss for Qwen-class LLM (bandwidth ceiling) |
-| **VE2** (HW H.264 encoder) | `/dev/cedar_dev_ve2` + `/dev/dma_heap/system` | ‚úì interrupts fire | ‚úì **Official suite 8/8 + rotation ALL PASS** | ‚úÖ **Usable** |
-| **GPU** (PowerVR BXM-4-64) | `/dev/dri/renderD128` ‚úì | ‚úì `pvrsrvkm`, Vulkan 1.3.277 + OpenCL 3.0, 600 MHz | ‚úì **OpenCL compute verified via IRQ delta** | ‚úÖ **Usable** |
-| **VPU** (V4L2 M2M decode/encode) | no `/dev/video*` | ‚Äî | ‚Äî | ‚õî Not present (use the cedar interface instead) |
+| **NPU** (Vivante VIP9000) | `/dev/vipcore` + VIPLite (**not** `/dev/galcore`) | ‚ú?**officially supported** (A7A = NPU v3 / SW v2.0) | ‚ö†Ô∏è **blocked by our image, not the hardware** ‚Ä?`radxa-a733_trixie` ships no NPU driver | ‚ö†Ô∏è **Usable after switching to `radxa-a733_bullseye_kde_r5`** (see the 2026-09-14 correction above). Community-validated for encoder-class work; still a net loss for Qwen-class LLM (bandwidth ceiling) |
+| **VE2** (HW H.264 encoder) | `/dev/cedar_dev_ve2` + `/dev/dma_heap/system` | ‚ú?interrupts fire | ‚ú?**Official suite 8/8 + rotation ALL PASS** | ‚ú?**Usable** |
+| **GPU** (PowerVR BXM-4-64) | `/dev/dri/renderD128` ‚ú?| ‚ú?`pvrsrvkm`, Vulkan 1.3.277 + OpenCL 3.0, 600 MHz | ‚ú?**OpenCL compute verified via IRQ delta** | ‚ú?**Usable** |
+| **VPU** (V4L2 M2M decode/encode) | no `/dev/video*` | ‚Ä?| ‚Ä?| ‚õ?Not present (use the cedar interface instead) |
 
-### NPU: final verdict ‚Äî hangs on 6.6 via BOTH routes
+### NPU: final verdict ‚Ä?hangs on 6.6 via BOTH routes
 
 The A733 NPU can be driven by **two different kernel drivers**:
 
 | Driver | Userspace | Result on `6.6.98-4-aw2511` |
 |---|---|---|
-| `vipcore` (vendor, in BSP) | VIPLite 2.0.3.2 (`/dev/vipcore`) | ‚õî init OK, then **hangs**: `VIPDRV_WAIT_TASK status=-1`, `npu: VIP not going to idle` |
-| `galcore` (open, out-of-tree) | TIM-VX 1.2.22 (`/dev/galcore`) | ‚õî builds after a 9-hunk port, but **hangs on real compute** (see `-ngl` matrix below) |
+| `vipcore` (vendor, in BSP) | VIPLite 2.0.3.2 (`/dev/vipcore`) | ‚õ?init OK, then **hangs**: `VIPDRV_WAIT_TASK status=-1`, `npu: VIP not going to idle` |
+| `galcore` (open, out-of-tree) | TIM-VX 1.2.22 (`/dev/galcore`) | ‚õ?builds after a 9-hunk port, but **hangs on real compute** (see `-ngl` matrix below) |
 
 **Root cause & runtime bypass (2026-09-13, `radxa_utlra` `modules/npu_clk_fix.c`).** Two
 independent initialization defects on the Radxa 6.6 BSP, both proven and both fixed at
-runtime without touching galcore (no `rmmod` ‚Äî that panics the board):
+runtime without touching galcore (no `rmmod` ‚Ä?that panics the board):
 
 | Layer | Defect | Evidence | Fix |
 |---|---|---|---|
-| 1. Clock | galcore calls `clk_prepare` but **never `clk_enable`** on `clk_npu` | `clk_summary`: `npu en=0 prep=1` sampled during an in-flight submission | `npu_clk_fix.ko`: `clk_prepare_enable()` ‚Üí `en=1 @1.008 GHz` |
-| 2. Power | `pd_npu` genpd stays **off** (device suspended, no VDD) | `pm_genpd_summary`: `pd_npu off-0` | PM QoS pin: `echo on > .../3600000.npu/power/control` ‚Üí `pd_npu on` |
-| 3. Reset/NSI | hardware still won't execute (44 s timeout ‚Üí auto-recovery) | dmesg `core0 hang, recovery done`, TIM-VX returns `-1` | **open** ‚Äî diff against `orangepi-xunlong/linux-orangepi` branch `orange-pi-6.6-sun60iw2` (petayyyy proved 6.6 works on that BSP) |
+| 1. Clock | galcore calls `clk_prepare` but **never `clk_enable`** on `clk_npu` | `clk_summary`: `npu en=0 prep=1` sampled during an in-flight submission | `npu_clk_fix.ko`: `clk_prepare_enable()` ‚Ü?`en=1 @1.008 GHz` |
+| 2. Power | `pd_npu` genpd stays **off** (device suspended, no VDD) | `pm_genpd_summary`: `pd_npu off-0` | PM QoS pin: `echo on > .../3600000.npu/power/control` ‚Ü?`pd_npu on` |
+| 3. Reset/NSI | hardware still won't execute (44 s timeout ‚Ü?auto-recovery) | dmesg `core0 hang, recovery done`, TIM-VX returns `-1` | **open** ‚Ä?diff against `orangepi-xunlong/linux-orangepi` branch `orange-pi-6.6-sun60iw2` (petayyyy proved 6.6 works on that BSP) |
 
 Net effect: NPU submissions went from **kernel wedge + bricked board** to **clean 44 s
 failure with auto-recovery** while llama.cpp falls back to CPU. Install:
 `sudo ./scripts/install-npu-clk-fix.sh` in `radxa_utlra` (idempotent systemd service;
 it also repairs `vipcore` hijacking the device binding at boot).
 
-**`galcore` failure matrix** (controlled experiment ‚Äî the `-ngl` variable finally fully covered):
+**`galcore` failure matrix** (controlled experiment ‚Ä?the `-ngl` variable finally fully covered):
 
 | llama.cpp `-ngl` | Behavior |
 |---|---|
-| `0` | A733 backend never selected by the scheduler ‚Äî pure CPU speed |
-| `1` | Runs at CPU speed (17.7 t/s) ‚Äî backend participates but completes no work |
-| `>= 2` | `E A733: TIM-VX run failed` ‚Üí `llama_decode ret = -3` ‚Üí kernel `[galcore]: core0 hang` |
+| `0` | A733 backend never selected by the scheduler ‚Ä?pure CPU speed |
+| `1` | Runs at CPU speed (17.7 t/s) ‚Ä?backend participates but completes no work |
+| `>= 2` | `E A733: TIM-VX run failed` ‚Ü?`llama_decode ret = -3` ‚Ü?kernel `[galcore]: core0 hang` |
 
 **Why the earlier "works via galcore" claim was retracted.** It was based on
 `grep galcore /proc/interrupts` incrementing. That criterion is **invalid for `galcore`**:
-the counter also moves during pure-CPU runs ‚Äî the IRQs come from the driver's `_SetPower`
+the counter also moves during pure-CPU runs ‚Ä?the IRQs come from the driver's `_SetPower`
 power-management pairing, not from compute. (For the GPU, `pvrsrvkm`, the same criterion
 happens to be valid, which is why the GPU verdict stands.) A profile-instrumented backend
 (`A733_PROFILE_EVERY=1`, in `radxa_utlra`) confirms `ggml_backend_a733_graph_compute()`
 never completes real work on this kernel.
 
 **The hang is environment-inherent, not caused by local changes.** Two 3 MB hang captures
-dated Sep 4 sit in `~/npu-bin/etc/npu/vpm_run/` on this board ‚Äî same ShuffleNetV2 NBG,
+dated Sep 4 sit in `~/npu-bin/etc/npu/vpm_run/` on this board ‚Ä?same ShuffleNetV2 NBG,
 from before any of this work.
 
 Porting `galcore` from 5.15 to 6.6 still took 9 mechanical changes (patch in
-`lilyco-42/radxa_utlra`) ‚Äî kept here because it is useful to whoever fixes the kernel side:
+`lilyco-42/radxa_utlra`) ‚Ä?kept here because it is useful to whoever fixes the kernel side:
 
 | # | Issue | Fix |
 |---|---|---|
-| 1‚Äì2 | `vm_flags` became read-only in 6.3 | `vm_flags_set(vma, ...)` |
+| 1‚Ä? | `vm_flags` became read-only in 6.3 | `vm_flags_set(vma, ...)` |
 | 3 | `pin_user_pages` dropped the `vmas` arg in 6.5 | 4-argument call |
 | 4 | `dma_buf.lock` removed in 6.6 | version guard |
 | 5 | `class_create` takes 1 arg since 6.4 | version guard |
@@ -174,18 +173,18 @@ Porting `galcore` from 5.15 to 6.6 still took 9 mechanical changes (patch in
 
 **Even when it works, LLM decode is negative ROI.** Measured on this very board with the
 vendor-verified **5.15.147-21-a733** kernel (reef1994 `board_verification.json`,
-2026-08-19): 24 INT16 NBG blocks, cosine 0.9999999999 ‚Äî **5.02 tok/s**, vs **18.1 tok/s**
+2026-08-19): 24 INT16 NBG blocks, cosine 0.9999999999 ‚Ä?**5.02 tok/s**, vs **18.1 tok/s**
 for the same model on 8 CPU cores. Per-layer CPU‚ÜîNPU sync round-trips dominate small
 models. Independent confirmation: [msazanov/vivante-vip9000-llm-lab](https://github.com/msazanov/vivante-vip9000-llm-lab)
 (actively maintained) reached only **0.97 tok/s** full-model NPU decode after weeks of tuning.
 
-**Where the NPU IS worth it**: CNN/ViT encoder workloads ‚Äî static shapes, one NBG call,
+**Where the NPU IS worth it**: CNN/ViT encoder workloads ‚Ä?static shapes, one NBG call,
 no KV-cache: Frigate detection, YOLO tracking, MediaPipe face landmarks, EmbeddingGemma
 (repos below). petayyyy got SmolVLM's SigLIP running *accurately* on NPU with the LLM on CPU.
 
 **If you want to fix the 6.6 hang**: the shortest path is diffing petayyyy's
 `6.6.98-sun60iw2` (Orange Pi BSP) NPU device-tree / clock / IRQ config against Radxa's
-`aw2511` ‚Äî they demonstrate `/dev/vipcore` working on a 6.6 kernel. Root-cause suspects
+`aw2511` ‚Ä?they demonstrate `/dev/vipcore` working on a 6.6 kernel. Root-cause suspects
 on the Radxa BSP: NPU clock (`pll-npu` 1.008 GHz), power domain (`pck-600`), or
 completion-IRQ routing.
 
@@ -194,29 +193,29 @@ completion-IRQ routing.
 The 6.6 hang is only the **first** wall. Even on a kernel where the vendor stack
 demonstrably runs (petayyyy drives `/dev/vipcore` on `6.6.98-sun60iw2`), four
 **toolchain-level** ceilings sit behind it. These are not engineering debt you can
-port away ‚Äî they are a paradigm mismatch between **static-shape NBG graphs** and
+port away ‚Ä?they are a paradigm mismatch between **static-shape NBG graphs** and
 autoregressive decoding:
 
 | # | Ceiling | Consequence |
 |---|---|---|
-| 1 | **No KV-cache.** ACUITY/VIPLite only emit **static-shape** NBG graphs | Every new token re-runs the whole W-token context ‚Üí O(W¬≤) work; coherence collapses above **W ‚âà 64**; there is no separate prefill stage. **Autoregressive chat is fundamentally incompatible with the NBG model.** |
-| 2 | **~6 GB/s effective decode bandwidth** ‚Äî the 3 TOPS ALU is starved by 32-bit LPDDR5 (on-chip working pool only 0‚Äì345 KB) | Every forward pass is weight-read bound. **The CPU path is bandwidth-bound too, so the NPU buys nothing** on decode. |
-| 3 | **No usable int4/int8 LLM path** ‚Äî public ACUITY offers only `pcq` (per-channel int8), incoherent at full depth; the only working precision is **int16** (1.45√ó slower, 2√ó larger) | You cannot fit or speed-run a modern quantised LLM. |
+| 1 | **No KV-cache.** ACUITY/VIPLite only emit **static-shape** NBG graphs | Every new token re-runs the whole W-token context ‚Ü?O(W¬≤) work; coherence collapses above **W ‚â?64**; there is no separate prefill stage. **Autoregressive chat is fundamentally incompatible with the NBG model.** |
+| 2 | **~6 GB/s effective decode bandwidth** ‚Ä?the 3 TOPS ALU is starved by 32-bit LPDDR5 (on-chip working pool only 0‚Ä?45 KB) | Every forward pass is weight-read bound. **The CPU path is bandwidth-bound too, so the NPU buys nothing** on decode. |
+| 3 | **No usable int4/int8 LLM path** ‚Ä?public ACUITY offers only `pcq` (per-channel int8), incoherent at full depth; the only working precision is **int16** (1.45√ó slower, 2√ó larger) | You cannot fit or speed-run a modern quantised LLM. |
 | 4 | **65536-dimension limit** | Qwen's **151,936**-token vocab hits the wall head-on (chunking slips past ONNX Runtime but not past BF16 export). |
 
 **This is independently confirmed, not just our board:**
 
 - **petayyyy** (board-verified driver, 2026-09): SmolLM2-135M on NPU = **20.7 tok/s**,
-  MobileCLIP-S0 vision = **22.6 ms/frame @ cos 0.99996** ‚Äî yet **Qwen2.5-0.5B NBG
+  MobileCLIP-S0 vision = **22.6 ms/frame @ cos 0.99996** ‚Ä?yet **Qwen2.5-0.5B NBG
   export fails on all 8 attempted paths** (int16 cos 0.24; BF16 `vnn_VerifyGraph -3`;
   FP16 cos 0.54; `pcq` hangs; mixed-dtype boundary errors).
 - **msazanov/vivante-vip9000-llm-lab**: after weeks of tuning, **0.97 tok/s**
   full-model NPU decode.
 - **reef1994**, vendor-verified on 5.15.147: 24-layer NBG = **5.02 tok/s** vs 18.1 on CPU.
 
-**What the NPU *is* good for** ‚Äî encoder-class work: static shape, one NBG call, no
-KV-cache. SmolLM2-135M in ‚â§64-token windows, visual encoders (MobileCLIP, SigLIP,
-MediaPipe face landmarks), YOLO person-tracking, Frigate detection ‚Äî all in the repo
+**What the NPU *is* good for** ‚Ä?encoder-class work: static shape, one NBG call, no
+KV-cache. SmolLM2-135M in ‚â?4-token windows, visual encoders (MobileCLIP, SigLIP,
+MediaPipe face landmarks), YOLO person-tracking, Frigate detection ‚Ä?all in the repo
 table below. The winning architecture is **hybrid**: NPU for vision, CPU for the LLM.
 
 ### VE2: works completely, verified against source
@@ -225,16 +224,16 @@ table below. The winning architecture is **hybrid**: NPU for vision, CPU for the
 
 | Suite | Result |
 |---|---|
-| FPS matrix (640√ó360 @1/7/15/29/30/60, 1920√ó1080 @30/60) | ‚úÖ **8/8 PASS** |
-| Rotation matrix (0¬∞/90¬∞/180¬∞/270¬∞) | ‚úÖ **ALL PASSED** |
+| FPS matrix (640√ó360 @1/7/15/29/30/60, 1920√ó1080 @30/60) | ‚ú?**8/8 PASS** |
+| Rotation matrix (0¬∞/90¬∞/180¬∞/270¬∞) | ‚ú?**ALL PASSED** |
 
 Each PASS requires `IRQ delta == frame count`, zero sync timeouts, exact output
-resolution and frame count, and duration within ¬±0.001 s ‚Äî i.e. the encoder provably
+resolution and frame count, and duration within ¬±0.001 s ‚Ä?i.e. the encoder provably
 does the work and the output is provably correct.
 
 | Metric | Value |
 |---|---|
-| 1080p throughput | ~68 fps (2.8√ó realtime) ‚Äî 241 frames in 3.5 s |
+| 1080p throughput | ~68 fps (2.8√ó realtime) ‚Ä?241 frames in 3.5 s |
 | 4K throughput | ~22 fps (3840√ó2160) |
 | CPU during encode | **~27% of one core** (libx264 needs 700%+) |
 
@@ -242,17 +241,17 @@ does the work and the output is provably correct.
 
 1. **Output MP4 had the wrong duration** (a 10 s clip reported 2.04 s). Cause: VE2's SPS
    VUI timing is slightly off, and `h264_metadata` bitstream filters are not applied
-   under `-c:v copy`. Fix: two-pass ‚Äî encode to a raw stream, then remux with
+   under `-c:v copy`. Fix: two-pass ‚Ä?encode to a raw stream, then remux with
    `-r $fps -fps_mode cfr -video_track_timescale 90000`.
 2. **Non-zero exit code** from an unclean temp directory, which made the official
    validation script report a false FAIL.
 
-### CPU: measured LLM selection ‚Äî what to actually run
+### CPU: measured LLM selection ‚Ä?what to actually run
 
 With the NPU out for chat, the real question is which CPU model to run. Every number
 below is **this board's own `llama-bench`** (`-dev none`, `-p 128 -n 128 -r 3`, mean of
 3 runs), all at **Q4_K_M** for fairness, decode measured at `-t 2` (`taskset -c 6,7`,
-only the two A76 cores ‚Äî always faster than all 8 cores, because the A55s slow the GEMM
+only the two A76 cores ‚Ä?always faster than all 8 cores, because the A55s slow the GEMM
 down):
 
 | Rank | Model | Params | Q4_K_M file | prefill t/s | **decode t/s** |
@@ -267,38 +266,38 @@ down):
 **Two findings worth the table:**
 
 - **Q4_K_M beats Q8_0 on decode by 36%** (same model, Qwen3-0.6B: 22.38 vs 16.49 tok/s)
-  ‚Äî but loses **27%** on prefill. Quantise down for interactive chat, up for long-prompt
+  ‚Ä?but loses **27%** on prefill. Quantise down for interactive chat, up for long-prompt
   RAG-style workloads.
-- **Qwen3.5-0.8B is a regression on this board** ‚Äî 13.5 tok/s, 40% slower than the
+- **Qwen3.5-0.8B is a regression on this board** ‚Ä?13.5 tok/s, 40% slower than the
   previous-gen Qwen3-0.6B. Its headline gain (cheaper *prefill* from a linear-attention
   hybrid) doesn't show up here either.
 
 **Recommendation:** `Qwen3-0.6B-Q4_K_M` + `taskset -c 6,7 -t 2` for interactive chat
 (22.4 tok/s, 373 MiB); `LFM2-700M-Q4_K_M` when you want 24% more parameters for only
 5.8% less speed; `MiniCPM5-1B` for local agents / tool-calling (16.7 tok/s, native MCP,
-128K context). For reference, the best NPU full-model decode was **5.02 tok/s** ‚Äî the
+128K context). For reference, the best NPU full-model decode was **5.02 tok/s** ‚Ä?the
 CPU wins by ~4.5√ó.
 
 **Speculative decoding: retracted on this board.** Three controlled runs
 (Qwen3-0.6B-Q4_K_M target + Q2_K draft, 2√óA76): baseline **20.83** / draft bound to the
-A55s **21.29** (+2.2%) / draft bound to the big cores **20.02** (‚àí3.9%). No net win.
+A55s **21.29** (+2.2%) / draft bound to the big cores **20.02** (‚à?.9%). No net win.
 Root cause: the **target** already runs at ~20 tok/s (bandwidth-bound) while the A55
-draft reaches only ~10 tok/s ‚Äî the draft is *slower than the target it is supposed to
+draft reaches only ~10 tok/s ‚Ä?the draft is *slower than the target it is supposed to
 feed*. Speculation trades compute for bandwidth; on this SoC the trade points the wrong
 way. Direction closed.
 
 ### The lesson (applies to any SBC accelerator work)
 
 > **Never declare hardware dead because one driver fails.** The A733 NPU fails under
-> `vipcore` and works under `galcore` ‚Äî same silicon, same kernel. When a vendor driver
+> `vipcore` and works under `galcore` ‚Ä?same silicon, same kernel. When a vendor driver
 > fails, check whether an open alternative exists before giving up.
 >
 > Equally: **never declare hardware working from a device node, an exit code, or an
 > incrementing interrupt counter alone.** The galcore IRQ counter increments on
-> power-management transitions (`_SetPower`), not only on compute ‚Äî an "IRQ delta proof"
+> power-management transitions (`_SetPower`), not only on compute ‚Ä?an "IRQ delta proof"
 > can be pure theater (it fooled us twice in one day; it *coincidentally* holds for the
 > GPU driver, which made it look trustworthy). Prefer instrumentation that only fires on
-> real work ‚Äî backend profile counters, output correctness vs a software reference ‚Äî and
+> real work ‚Ä?backend profile counters, output correctness vs a software reference ‚Ä?and
 > make sure the *reference path* itself is correct, because a broken remux step can make
 > working hardware look broken.
 
@@ -355,7 +354,7 @@ sudo ./scripts/deploy-a7a-full-stack.sh           # install
 | [chainsx/openwrt-sunxi-aiot](https://github.com/chainsx/openwrt-sunxi-aiot) | 8 | OpenWrt for Allwinner sunxi AIoT boards (supports A733: Radxa-Cubie-A7A, Radxa-Cubie-A7Z) |
 | [GameOctane/OctaneOS](https://github.com/GameOctane/OctaneOS) | 10 | Custom Batocera Linux fork for the Radxa Cubie A7S (retro gaming OS) |
 | [ritiek/nixos-cubie-a7s](https://github.com/ritiek/nixos-cubie-a7s) | 0 | NixOS on Radxa Cubie A7S |
-| [open-astro/openastro-orangepi4pro](https://github.com/open-astro/openastro-orangepi4pro) | 0 | OpenAstro OS image for Orange Pi 4 Pro ‚Äî WiFi AP + AlpacaBridge-ready, custom kernel with ZWO EAF/EFW support |
+| [open-astro/openastro-orangepi4pro](https://github.com/open-astro/openastro-orangepi4pro) | 0 | OpenAstro OS image for Orange Pi 4 Pro ‚Ä?WiFi AP + AlpacaBridge-ready, custom kernel with ZWO EAF/EFW support |
 
 ## NPU (Neural Processing Unit)
 
@@ -363,27 +362,27 @@ The A733 features a Vivante VIP9000 NPU with 3 TOPS @ INT8. The device node is `
 
 | Repo | Stars | Description |
 |------|-------|-------------|
-| [petayyyy/a733_npu_driver](https://github.com/petayyyy/a733_npu_driver) | 6 | NPU toolchain (ONNX‚ÜíACUITY‚ÜíNBG‚ÜíVIPLite). **Documents both 5.15.147 and 6.6.98-sun60iw2 kernels** ‚Äî `/dev/vipcore` works on the Orange Pi 6.6 BSP. SmolVLM SigLIP on NPU + CPU LLM works; Qwen2.5-0.5B NBG export fails accuracy on all paths |
+| [petayyyy/a733_npu_driver](https://github.com/petayyyy/a733_npu_driver) | 6 | NPU toolchain (ONNX‚ÜíACUITY‚ÜíNBG‚ÜíVIPLite). **Documents both 5.15.147 and 6.6.98-sun60iw2 kernels** ‚Ä?`/dev/vipcore` works on the Orange Pi 6.6 BSP. SmolVLM SigLIP on NPU + CPU LLM works; Qwen2.5-0.5B NBG export fails accuracy on all paths |
 | [reef1994/a733-llama-npu-stack](https://github.com/reef1994/a733-llama-npu-stack) | 0 | **`galcore` NPU driver + TIM-VX + llama.cpp stack for A733.** Vendor-verified on 5.15.147-21-a733: 24-layer NBG runs at 5.02 tok/s, cosine 0.9999999999 (slower than 8-core CPU at 18.1). Needs a 9-hunk port for Radxa 6.6 (see `lilyco-42/radxa_utlra`), where it then hits the HW hang |
 | [lilyco-42/radxa_utlra](https://github.com/lilyco-42/radxa_utlra) | 0 | **One-command A7A full-stack deploy**: `galcore` 6.6 port patch + VE2 runtime + GPU 14-point check + governor tuning. Idempotent installer with `--npu/--ve2/--gpu/--perf/--check` |
-| [ZIFENG278/ai-sdk](https://github.com/ZIFENG278/ai-sdk) | 25 | Radxa Cubie series NPU AI-SDK ‚Äî Allwinner's official NPU SDK for the Cubie board family. Version pairing: kernel VIPLite `2.0.3.4-AW-2025-10-27` + userspace `2.0.3.2-AW-2024-08-30` (A733 = v2.0, T527 = v1.13; bundled sample model is T527-only, use `*_a733.nb`) |
-| [nsbb/ai-sdk](https://github.com/nsbb/ai-sdk) | 0 | T527 ACUITY toolkit mirror incl. `docs/acuity_612_vs_621.md` ‚Äî check here when NBG exports produce garbage (toolchain version differences) |
-| [VeriSilicon/TIM-VX](https://github.com/VeriSilicon/TIM-VX) | 261 | Official VeriSilicon TIM-VX NPU runtime ‚Äî the upstream framework for Vivante NPU programming |
-| [VeriSilicon/tflite-vx-delegate](https://github.com/VeriSilicon/tflite-vx-delegate) | 48 | TensorFlow Lite external delegate based on TIM-VX ‚Äî run TFLite models on Vivante NPU |
+| [ZIFENG278/ai-sdk](https://github.com/ZIFENG278/ai-sdk) | 25 | Radxa Cubie series NPU AI-SDK ‚Ä?Allwinner's official NPU SDK for the Cubie board family. Version pairing: kernel VIPLite `2.0.3.4-AW-2025-10-27` + userspace `2.0.3.2-AW-2024-08-30` (A733 = v2.0, T527 = v1.13; bundled sample model is T527-only, use `*_a733.nb`) |
+| [nsbb/ai-sdk](https://github.com/nsbb/ai-sdk) | 0 | T527 ACUITY toolkit mirror incl. `docs/acuity_612_vs_621.md` ‚Ä?check here when NBG exports produce garbage (toolchain version differences) |
+| [VeriSilicon/TIM-VX](https://github.com/VeriSilicon/TIM-VX) | 261 | Official VeriSilicon TIM-VX NPU runtime ‚Ä?the upstream framework for Vivante NPU programming |
+| [VeriSilicon/tflite-vx-delegate](https://github.com/VeriSilicon/tflite-vx-delegate) | 48 | TensorFlow Lite external delegate based on TIM-VX ‚Ä?run TFLite models on Vivante NPU |
 | [VeriSilicon/vsi-pjrt-plugin](https://github.com/VeriSilicon/vsi-pjrt-plugin) | 7 | PJRT plugin for TensorFlow/JAX NPU acceleration via VeriSilicon IP |
 | [MaverickLong/MLIR-TIM-VX](https://github.com/MaverickLong/MLIR-TIM-VX) | 3 | MLIR lowering path to TIM-VX backend for VeriSilicon NPUs |
-| [alexcaoys/allwinner-bsp](https://github.com/alexcaoys/allwinner-bsp) | 0 | BSP kernel tree containing the vendor `vipcore` NPU driver source (header paths broken as shipped ‚Äî Armbian forum thread 56130 p.4 has a patched tree) |
-| [waz664/vip9000-embeddinggemma](https://github.com/waz664/vip9000-embeddinggemma) | 0 | EmbeddingGemma on VIP9000 (Cubie A7S) ‚Äî encoder-class workload that actually suits the NPU |
+| [alexcaoys/allwinner-bsp](https://github.com/alexcaoys/allwinner-bsp) | 0 | BSP kernel tree containing the vendor `vipcore` NPU driver source (header paths broken as shipped ‚Ä?Armbian forum thread 56130 p.4 has a patched tree) |
+| [waz664/vip9000-embeddinggemma](https://github.com/waz664/vip9000-embeddinggemma) | 0 | EmbeddingGemma on VIP9000 (Cubie A7S) ‚Ä?encoder-class workload that actually suits the NPU |
 | [RiteshKumarRay/Radxa-VIP9000-NPU-Tracking](https://github.com/RiteshKumarRay/Radxa-VIP9000-NPU-Tracking) | 0 | YOLOv5s person tracking on VIP9000 |
 | [arnaudlvq/MediaPipe-FaceLandmarker-NPU-Version-A733-VeriSilicon-VIP9000](https://github.com/arnaudlvq/MediaPipe-FaceLandmarker-NPU-Version-A733-VeriSilicon-VIP9000) | 0 | MediaPipe face landmarks on the A733 NPU |
 | [unnamedwild-ux/frigate_npu_vivante](https://github.com/unnamedwild-ux/frigate_npu_vivante) | 4 | Frigate (NVR/surveillance) running on Vivante VIP9000 NPU |
 | [msazanov/vivante-vip9000-llm-lab](https://github.com/msazanov/vivante-vip9000-llm-lab) | 0 | Evidence-driven LLM-on-NPU lab (updated 2026-09): best full-model NPU decode 0.97 tok/s; documents LPDDR bandwidth (controller readback 510 MHz) |
 | [rhiqday/a733-npu-viplite](https://github.com/rhiqday/a733-npu-viplite) | 1 | **Reverse-engineered `vip_lite.h`** + working example code for running your own NBG on VIP9000 via the on-device VIPLite runtime (tested on Orange Pi 4 Pro / Android 13). Fills the "no public header, no docs" gap |
 | [Thenukegun10x/a733-NPU-htop](https://github.com/Thenukegun10x/a733-NPU-htop) | 0 | htop-style task manager for the A733 NPU (utilisation/telemetry) |
-| [Ronin-1124/cubie-a7a-voice-assistant](https://github.com/Ronin-1124/cubie-a7a-voice-assistant) | 1 | Offline Chinese voice assistant for the Cubie A7A ‚Äî the kind of workload (ASR/KWS/VAD) where the NPU can actually pay off |
-| [senijus/smart_retail](https://github.com/senijus/smart_retail) | 0 | Unattended retail terminal on A733 + NPU: camera product recognition ‚Üí counting ‚Üí checkout, offline-capable |
-| [konqoro/nim-viplite](https://github.com/konqoro/nim-viplite) ¬∑ [jeasonzs/viplite-driver](https://github.com/jeasonzs/viplite-driver) | 2 / 1 | VIPLite bindings/driver packaging ‚Äî useful when wiring the vendor runtime into your own app |
-| [onnxruntime#28244](https://github.com/Microsoft/onnxruntime/issues/28244) | ‚Äî | Community request for a **VIPLite Execution Provider** in ONNX Runtime (A733/T527). Open since 2026-04, now **stale with no vendor response** ‚Äî the one upstream integration that would make NPU usable from mainstream stacks |
+| [Ronin-1124/cubie-a7a-voice-assistant](https://github.com/Ronin-1124/cubie-a7a-voice-assistant) | 1 | Offline Chinese voice assistant for the Cubie A7A ‚Ä?the kind of workload (ASR/KWS/VAD) where the NPU can actually pay off |
+| [senijus/smart_retail](https://github.com/senijus/smart_retail) | 0 | Unattended retail terminal on A733 + NPU: camera product recognition ‚Ü?counting ‚Ü?checkout, offline-capable |
+| [konqoro/nim-viplite](https://github.com/konqoro/nim-viplite) ¬∑ [jeasonzs/viplite-driver](https://github.com/jeasonzs/viplite-driver) | 2 / 1 | VIPLite bindings/driver packaging ‚Ä?useful when wiring the vendor runtime into your own app |
+| [onnxruntime#28244](https://github.com/Microsoft/onnxruntime/issues/28244) | ‚Ä?| Community request for a **VIPLite Execution Provider** in ONNX Runtime (A733/T527). Open since 2026-04, now **stale with no vendor response** ‚Ä?the one upstream integration that would make NPU usable from mainstream stacks |
 | [hqu-little-boy/archlinuxarm-a733](https://github.com/hqu-little-boy/archlinuxarm-a733) | 0 | Arch Linux ARM packages for Cubie A7A: kernel `5.15.147` (BSP) + U-Boot 2018.07. Handy if you want the **5.15** line where the vendor NPU stack is verified |
 | [Haidegger22/orangepi-zero3w-gpu-npu-vpu-debian11](https://github.com/Haidegger22/orangepi-zero3w-gpu-npu-vpu-debian11) | 1 | Orange Pi Zero 3W (A733) GPU/NPU/VPU Debian 11 setup guide |
 | [HBConline/orangepi4pro-skill](https://github.com/HBConline/orangepi4pro-skill) | 3 | Agent skill for Orange Pi 4 Pro (A733): embedded Linux, edge AI (3 TOPS NPU), GPIO/wiringOP, Android 13 AOSP. Encodes 263-page official manual |
@@ -393,19 +392,19 @@ The A733 features a Vivante VIP9000 NPU with 3 TOPS @ INT8. The device node is `
 | Component | Status | Notes |
 |-----------|--------|-------|
 | VIPLite 2.0.3.2-AW-2024-08-30 | **Installed & loads** | From `ZIFENG278/ai-sdk` (367MB). Install `libVIPhal.so` + `libNBGlinker.so` to `/usr/lib` + `ldconfig`. Driver reports `cid=0x1000003b, device_count=1, core_count=1` |
-| `vpm_run` (VIPLite test runner) | **Builds & runs** | `ai-sdk/examples/vpm_run/`. Loads NBG models fine, but **inference hangs** ‚Äî see [Verified Hardware Status](#verified-hardware-status-radxa-kernel-6698-4-aw2511) |
+| `vpm_run` (VIPLite test runner) | **Builds & runs** | `ai-sdk/examples/vpm_run/`. Loads NBG models fine, but **inference hangs** ‚Ä?see [Verified Hardware Status](#verified-hardware-status-radxa-kernel-6698-4-aw2511) |
 | ACUITY Toolkit | Not installed (needs x86 Docker) | Model conversion ONNX -> NBG. Image `ubuntu-npu:v2.0.10.1`. Runs on a PC, not on the board |
 | TIM-VX | Available upstream | Open-source VeriSilicon runtime |
 | TFLite VX Delegate | Available upstream | TFLite -> TIM-VX bridge |
-| `/dev/vipcore` | Exists on board | Char device 199:0, mode 0666. NPU devfreq 492‚Äì1008 MHz at `/sys/class/devfreq/3600000.npu/` |
+| `/dev/vipcore` | Exists on board | Char device 199:0, mode 0666. NPU devfreq 492‚Ä?008 MHz at `/sys/class/devfreq/3600000.npu/` |
 
 **Caveat**: installing the SDK is straightforward and the driver initializes correctly,
-but **no model completes inference on kernel `6.6.98-4-aw2511`** ‚Äî final verdict, both
+but **no model completes inference on kernel `6.6.98-4-aw2511`** ‚Ä?final verdict, both
 driver routes hang at hardware execution (see
 [Verified Hardware Status](#verified-hardware-status-radxa-kernel-6698-4-aw2511)).
 Official pairing per Radxa: kernel VIPLite `2.0.3.4-AW-2025-10-27` + userspace
 `2.0.3.2-AW-2024-08-30` is a legal combination (ABI 2.0.3 check only); use the r5 image
-for NPU work, not the T5 test image. Budget your time accordingly ‚Äî verify inference
+for NPU work, not the T5 test image. Budget your time accordingly ‚Ä?verify inference
 works on your kernel before investing in model conversion.
 
 ## GPU (PowerVR BXM-4-64)
@@ -418,11 +417,11 @@ The A733 uses an Imagination BXM-4-64 MC1 GPU (PowerVR architecture). Driver: `p
 | [TblP/orangepi-gpu-exp](https://github.com/TblP/orangepi-gpu-exp) | 1 | GPU GEMM / Whisper acceleration research on PowerVR BXM |
 | [Haidegger22/orangepi-zero3w-gpu-pcie](https://github.com/Haidegger22/orangepi-zero3w-gpu-pcie) | 3 | GPU OpenGL ES 3.2 + Vulkan 1.3 + PCIe 3.0 on Orange Pi Zero 3W (A733) under Debian 13 |
 | [Rabs9/radxa-a7a-toolkit](https://github.com/Rabs9/radxa-a7a-toolkit) | 0 | Fixes, tools and game launchers for Cubie A7A (A733 / PowerVR BXM-4-64) on Debian 13 |
-| [lilyco-42/radxa_utlra](https://github.com/lilyco-42/radxa_utlra) | 0 | `scripts/gpu-check.sh` ‚Äî 14-point GPU verification (kernel/DRM, Vulkan driverID, OpenCL compute + interrupt-counter proof) |
+| [lilyco-42/radxa_utlra](https://github.com/lilyco-42/radxa_utlra) | 0 | `scripts/gpu-check.sh` ‚Ä?14-point GPU verification (kernel/DRM, Vulkan driverID, OpenCL compute + interrupt-counter proof) |
 
-### ‚úÖ Verified on Radxa Debian 13, kernel `6.6.98-4-aw2511`
+### ‚ú?Verified on Radxa Debian 13, kernel `6.6.98-4-aw2511`
 
-Both Vulkan and OpenCL work out of the box ‚Äî no extra installation needed. The Radxa image
+Both Vulkan and OpenCL work out of the box ‚Ä?no extra installation needed. The Radxa image
 already ships the full DDK via the `xserver-xorg-img-bxm` package.
 
 ```
@@ -430,20 +429,20 @@ GPU0: PowerVR B-Series BXM-4-64 MC1
       driverID          = DRIVER_ID_IMAGINATION_PROPRIETARY
       apiVersion        = 1.3.277
       driverInfo        = 24.2@6603887
-      conformanceVersion= 1.3.8.1        ‚Üê passes Khronos conformance
+      conformanceVersion= 1.3.8.1        ‚Ü?passes Khronos conformance
       clock             = 600 MHz
 ```
 
 ```bash
 vulkaninfo --summary | grep -E 'deviceName|driverID'
-# ‚Üí deviceName = PowerVR B-Series BXM-4-64 MC1
-# ‚Üí driverID   = DRIVER_ID_IMAGINATION_PROPRIETARY
+# ‚Ü?deviceName = PowerVR B-Series BXM-4-64 MC1
+# ‚Ü?driverID   = DRIVER_ID_IMAGINATION_PROPRIETARY
 
 clinfo | grep -E 'Device Name|Device Version'
-# ‚Üí Device Name    = PowerVR B-Series BXM-4-64
-# ‚Üí Device Version = OpenCL 3.0
+# ‚Ü?Device Name    = PowerVR B-Series BXM-4-64
+# ‚Ü?Device Version = OpenCL 3.0
 
-bash scripts/gpu-check.sh     # from lilyco-42/radxa_utlra ‚Äî 14/14 pass
+bash scripts/gpu-check.sh     # from lilyco-42/radxa_utlra ‚Ä?14/14 pass
 ```
 
 ### ‚ö†Ô∏è Trap: `vulkaninfo` also lists a software-only device
@@ -452,8 +451,8 @@ If `mesa-vulkan-drivers` is installed (Debian ships it by default), `vulkaninfo`
 **unconditionally enumerate an extra lavapipe device**:
 
 ```
-GPU0: PowerVR B-Series BXM-4-64 MC1     ‚Üê real GPU
-GPU1: (unnamed)                          ‚Üê Mesa lavapipe, CPU software rasterizer
+GPU0: PowerVR B-Series BXM-4-64 MC1     ‚Ü?real GPU
+GPU1: (unnamed)                          ‚Ü?Mesa lavapipe, CPU software rasterizer
       vendorID = 0x10005
       driverID = DRIVER_ID_MESA_LAVAPIPE
 ```
@@ -469,7 +468,7 @@ This matters for benchmarks: a lavapipe result looks plausible but measures your
 
 ### How to prove compute actually runs on the GPU
 
-Same methodology as the NPU section ‚Äî watch the hardware interrupt counter, which cannot
+Same methodology as the NPU section ‚Ä?watch the hardware interrupt counter, which cannot
 be faked:
 
 ```bash
@@ -478,7 +477,7 @@ grep pvrsrvkm /proc/interrupts
 <run a 4M-element OpenCL vector add>
 grep pvrsrvkm /proc/interrupts
 # 481:  78  0  0  0  0  0  0  0  wakeupgen  63 Level  pvrsrvkm
-#       ‚Üë +6 ‚Äî commands really reached the PowerVR hardware
+#       ‚Ü?+6 ‚Ä?commands really reached the PowerVR hardware
 ```
 
 ### Component map
@@ -486,19 +485,19 @@ grep pvrsrvkm /proc/interrupts
 | Part | Location | Source package |
 |------|----------|----------------|
 | Kernel driver | `pvrsrvkm`, binds `/soc@3000000/gpu@1800000` (`img,gpu`) | kernel BSP |
-| Render node | `/dev/dri/renderD128` (DRIVER=pvrsrvkm) | ‚Äî |
-| Vulkan lib | `/usr/lib/libVK_IMG.so` ‚Üí `libVK_IMG.so.24.2.6603887` | `xserver-xorg-img-bxm` |
+| Render node | `/dev/dri/renderD128` (DRIVER=pvrsrvkm) | ‚Ä?|
+| Vulkan lib | `/usr/lib/libVK_IMG.so` ‚Ü?`libVK_IMG.so.24.2.6603887` | `xserver-xorg-img-bxm` |
 | Vulkan ICD | `/usr/share/vulkan/icd.d/img_icd.json` | same |
 | OpenCL lib | `/usr/lib/libPVROCL.so` | same |
 | OpenCL ICD | `/etc/OpenCL/vendors/powervr.icd` | same |
 
 Vulkan and OpenCL share the same DDK (`libsrv_um.so` + `pvrsrvkm`), so **if one works the
-other almost certainly does** ‚Äî no separate bring-up required.
+other almost certainly does** ‚Ä?no separate bring-up required.
 
 ### Notes and gotchas
 
 - `vkcube` defaults to X11; on a headless box it prints `Selected WSI platform: xlib` and exits.
-  This is **not** a rendering failure ‚Äî use offscreen/`VK_EXT_headless_surface` to test without a display.
+  This is **not** a rendering failure ‚Ä?use offscreen/`VK_EXT_headless_surface` to test without a display.
 - Compiling OpenCL host code needs `opencl-headers` (not installed by default on Debian).
 - `/dev/dri/renderD128` requires `video` group membership for non-root users.
 - The GPU has no independent `devfreq` node; clocking goes through CCF (`/sys/kernel/debug/clk/gpu0/`).
@@ -513,7 +512,7 @@ The Allwinner Video Engine (VE) on A733 supports H.264/H.265 encode @ 4K30fps an
 >
 > A common mistake is checking only `/dev/video*` and concluding "VPU is unavailable".
 > That only proves the **V4L2 M2M** path is missing (true). The VE2 hardware encoder uses a
-> completely different interface ‚Äî the **cedar character devices**:
+> completely different interface ‚Ä?the **cedar character devices**:
 >
 > ```bash
 > ls -l /dev/cedar_dev /dev/cedar_dev_ve2 /dev/dma_heap/system
@@ -529,7 +528,7 @@ The Allwinner Video Engine (VE) on A733 supports H.264/H.265 encode @ 4K30fps an
 > SUBSYSTEM=="dma_heap",   MODE="0666"
 > ```
 >
-> **However ‚Äî existing does not mean working.** See
+> **However ‚Ä?existing does not mean working.** See
 > [Verified Hardware Status](#verified-hardware-status-radxa-kernel-6698-4-aw2511) below:
 > on the Radxa 6.6 kernel the encoder runs but emits **noise**, not video.
 >
@@ -593,7 +592,7 @@ The A733 has a PCIe 3.0 x1 lane (FPC connector). These projects address PCIe com
 
 | Repo | Stars | Description |
 |------|-------|-------------|
-| [CarterPerez-dev/orangepi-4-pro-nvme-fix](https://github.com/CarterPerez-dev/orangepi-4-pro-nvme-fix) | 6 | Fix for NVMe drives not detected on Orange Pi 4 Pro (A733) ‚Äî device tree workaround for PCIe Gen3 speed-change bug affecting Phison-based SSDs |
+| [CarterPerez-dev/orangepi-4-pro-nvme-fix](https://github.com/CarterPerez-dev/orangepi-4-pro-nvme-fix) | 6 | Fix for NVMe drives not detected on Orange Pi 4 Pro (A733) ‚Ä?device tree workaround for PCIe Gen3 speed-change bug affecting Phison-based SSDs |
 | [MitkoMD/ALLWINNER_A733_PCIE_CORRECTION](https://github.com/MitkoMD/ALLWINNER_A733_PCIE_CORRECTION) | 0 | PCIe correction/fix for A733 |
 | [28andrew/orangepi-4-pro-sas3008-hba](https://github.com/28andrew/orangepi-4-pro-sas3008-hba) | 0 | LSI SAS3008 (9300-8i) HBA on Orange Pi 4 Pro (A733): PCIe Gen1 link-training fix, DKMS driver, mpt3sas MSI patch |
 | [Techburst36/orangepi-zero3w-m2-carrier](https://github.com/Techburst36/orangepi-zero3w-m2-carrier) | 2 | Open-source KiCad PCIe-to-M.2 carrier board for Orange Pi Zero 3W (A733) |
@@ -616,7 +615,7 @@ The A733's 8-core CPU + PowerVR GPU make it a capable retro gaming machine.
 
 | Repo | Stars | Description |
 |------|-------|-------------|
-| [GameOctane/OctaneOS](https://github.com/GameOctane/OctaneOS) | 10 | Custom Batocera Linux fork for Radxa Cubie A7S ‚Äî retro gaming OS with emulator suite |
+| [GameOctane/OctaneOS](https://github.com/GameOctane/OctaneOS) | 10 | Custom Batocera Linux fork for Radxa Cubie A7S ‚Ä?retro gaming OS with emulator suite |
 | [Haidegger22/orangepi-zero3w-vcmi-heroes3](https://github.com/Haidegger22/orangepi-zero3w-vcmi-heroes3) | 0 | Heroes of Might and Magic III (VCMI 1.7.5) on A733: installation, performance tuning, joystick control |
 
 ## AI / Edge Applications
@@ -627,7 +626,7 @@ Real-world AI applications built on A733's NPU and CPU.
 |------|-------|-------------|
 | [Ronin-1124/cubie-a7a-voice-assistant](https://github.com/Ronin-1124/cubie-a7a-voice-assistant) | 1 | Offline Chinese voice assistant for Cubie A7A (A733 NPU): KWS + ASR + TTS |
 | [Dan-CV-Edge/radxa-stereo-gesture-interface](https://github.com/Dan-CV-Edge/radxa-stereo-gesture-interface) | 0 | Embedded stereo-vision interface for real-time hand gesture recognition and device control on Cubie A7A |
-| [Anothernear/CyberChest_Agronomico](https://github.com/Anothernear/CyberChest_Agronomico) | 0 | Wearable AI assistant on Cubie A7A for agricultural use ‚Äî offline LLM for farming Q&A |
+| [Anothernear/CyberChest_Agronomico](https://github.com/Anothernear/CyberChest_Agronomico) | 0 | Wearable AI assistant on Cubie A7A for agricultural use ‚Ä?offline LLM for farming Q&A |
 | [Anothernear/BMOAgente_agricultor](https://github.com/Anothernear/BMOAgente_agricultor) | 0 | Animated face + TTS/STT + LLM for offline horticulture assistance on Cubie A7A (wearable format) |
 | [Haidegger22/orangepi-zero3w-qwen-deepseek-bridge](https://github.com/Haidegger22/orangepi-zero3w-qwen-deepseek-bridge) | 0 | Qwen (local via Ollama) <-> DeepSeek (cloud) router via CDP, with webchat + auto Chromium on A733 |
 
@@ -637,7 +636,7 @@ Real-world AI applications built on A733's NPU and CPU.
 |------|-------|-------------|
 | [well0nez/sunxi-env-patcher](https://github.com/well0nez/sunxi-env-patcher) | 1 | Allwinner/Sunxi U-Boot environment patcher with CRC32 fixup. Read, verify, modify env_a partitions on H713, H616, H6, D1 and other sunxi SoCs |
 | [Guation/radxa-cubie-a5e-u-boot](https://github.com/Guation/radxa-cubie-a5e-u-boot) | 0 | Export DRAM parameters of Radxa Cubie A5E (u-boot tool) |
-| [skitzo2000/esp32-a7s-fel](https://github.com/skitzo2000/esp32-a7s-fel) | 0 | ESP32-S3 firmware that FEL-boots a bricked Cubie A7S off a USB stick ‚Äî no PC in the loop |
+| [skitzo2000/esp32-a7s-fel](https://github.com/skitzo2000/esp32-a7s-fel) | 0 | ESP32-S3 firmware that FEL-boots a bricked Cubie A7S off a USB stick ‚Ä?no PC in the loop |
 | [beg0fthend/edk2-a733](https://github.com/beg0fthend/edk2-a733) | 3 | WIP EDK2 (UEFI) port for Allwinner A733 / Orange Pi 4 Pro |
 
 ## Mainline Linux
@@ -653,7 +652,7 @@ Projects working on mainline Linux kernel support for A733.
 
 | Repo | Stars | Description |
 |------|-------|-------------|
-| [ayiejosh/a733-powervr-fex](https://github.com/ayiejosh/a733-powervr-fex) | 5 | FEX x86 emulation + GPU Vulkan on A733 ‚Äî multi-project bring-up |
+| [ayiejosh/a733-powervr-fex](https://github.com/ayiejosh/a733-powervr-fex) | 5 | FEX x86 emulation + GPU Vulkan on A733 ‚Ä?multi-project bring-up |
 | [chainsx/openwrt-sunxi-aiot](https://github.com/chainsx/openwrt-sunxi-aiot) | 8 | OpenWrt router/edge-gateway build for sunxi AIoT (A733 compatible) |
 | [JerrettDavis/orangepi4pro-cyberdeck](https://github.com/JerrettDavis/orangepi4pro-cyberdeck) | 1 | Orange Pi 4 Pro A733 cyberdeck planning and runbooks |
 | [aricshow/orangepi-zero3w-armbian-cyberdeck-mods](https://github.com/aricshow/orangepi-zero3w-armbian-cyberdeck-mods) | 0 | Provisioning scripts turning Armbian for Orange Pi Zero 3W (A733) into a headless cyberdeck: BLE keyboard, HDMI, USB-C display glasses |
@@ -709,20 +708,20 @@ On kernel `6.6.98-4-aw2511`, testing `/dev/vipcore` (VIPLite) for NPU and
 
 | Claim | Evidence given at the time |
 |---|---|
-| NPU ‚õî unusable | `lenet`, `ShuffleNetV2`, `resnet50` (v2 + v3 NBG) all hung at `VIPDRV_WAIT_TASK`; dmesg `error wait irq hardware hang` |
-| VE2 ‚õî unusable | Encoder exited `status=ok` with correct frame count, but decoded content was noise: PSNR 10.2 dB vs libx264's 42.6 dB |
+| NPU ‚õ?unusable | `lenet`, `ShuffleNetV2`, `resnet50` (v2 + v3 NBG) all hung at `VIPDRV_WAIT_TASK`; dmesg `error wait irq hardware hang` |
+| VE2 ‚õ?unusable | Encoder exited `status=ok` with correct frame count, but decoded content was noise: PSNR 10.2 dB vs libx264's 42.6 dB |
 
 The reasoning was: both accelerators init fine and fail at the
-userspace ‚Üí kernel ‚Üí silicon handoff, so it must be a DMA/IOMMU bug in the BSP.
+userspace ‚Ü?kernel ‚Ü?silicon handoff, so it must be a DMA/IOMMU bug in the BSP.
 That conclusion was confidently wrong on both counts.
 
 ### What was actually true
 
-**NPU** ‚Äî the hardware was never broken. The test used the vendor `vipcore` driver; the
+**NPU** ‚Ä?the hardware was never broken. The test used the vendor `vipcore` driver; the
 open `galcore` driver on the *same kernel* works. One driver failing is not the silicon
 failing.
 
-**VE2** ‚Äî the hardware was never broken either. The "noise" came from **our own measurement
+**VE2** ‚Ä?the hardware was never broken either. The "noise" came from **our own measurement
 setup**: the MP4 remux step produced a file with corrupted timestamps, and comparing that
 against the source produced a garbage PSNR. The encoder output itself was fine all along.
 With the remux fixed, the official suite passes 8/8.
@@ -730,7 +729,7 @@ With the remux fixed, the official suite passes 8/8.
 ### The three mistakes worth remembering
 
 1. **Concluding "hardware is broken" from one driver's failure.** Always ask whether an
-   alternative driver path exists. `grep -r <device> /sys/bus/platform/drivers/` ‚Äî on this
+   alternative driver path exists. `grep -r <device> /sys/bus/platform/drivers/` ‚Ä?on this
    board both `vipcore` *and* `galcore` can bind the NPU, and only one of them works.
 
 2. **Trusting a measurement pipeline you haven't validated.** The PSNR that "proved" VE2
@@ -772,8 +771,8 @@ MIT
 
 ## Acknowledgments
 
-- [Radxa](https://radxa.com/) ‚Äî hardware and official BSP
-- [linux-sunxi community](https://linux-sunxi.org/) ‚Äî open-source Allwinner documentation
-- [VeriSilicon](https://github.com/VeriSilicon) ‚Äî TIM-VX NPU runtime
-- [Orange Pi](http://www.orangepi.org/) ‚Äî A733-based boards (4 Pro, Zero 3W)
+- [Radxa](https://radxa.com/) ‚Ä?hardware and official BSP
+- [linux-sunxi community](https://linux-sunxi.org/) ‚Ä?open-source Allwinner documentation
+- [VeriSilicon](https://github.com/VeriSilicon) ‚Ä?TIM-VX NPU runtime
+- [Orange Pi](http://www.orangepi.org/) ‚Ä?A733-based boards (4 Pro, Zero 3W)
 - All the community contributors building the A733 ecosystem
